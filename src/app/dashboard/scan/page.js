@@ -16,7 +16,8 @@ export default function ScanPage() {
     }, []);
 
     const connectWebSocket = () => {
-        const ws = new WebSocket('ws://localhost:8999');
+        // Use 127.0.0.1 instead of localhost for better mixed-content compatibility
+        const ws = new WebSocket('ws://127.0.0.1:8999');
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -24,11 +25,22 @@ export default function ScanPage() {
             toast.success('Connected to NFC Reader');
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
             setStatus('disconnected');
-            toast.error('Disconnected from NFC Reader');
+            // If the close code is related to security or connection failure immediately
+            if (!event.wasClean) {
+                console.log('WS Close:', event);
+            }
             // Try reconnecting in 5s
             setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = (err) => {
+            console.error('WS Error:', err);
+            // Help the user identify the Mixed Content issue
+            toast.error('Connection Failed. If on HTTPS, allow "Insecure Content" in site settings.', {
+                duration: 5000,
+            });
         };
 
         ws.onmessage = async (event) => {
@@ -80,8 +92,8 @@ export default function ScanPage() {
             <div className="flex items-center justify-between mb-8">
                 <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Scan Terminal</h1>
                 <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${status === 'connected' || status === 'processing'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                     }`}>
                     {status === 'connected' || status === 'processing' ? <Wifi size={18} /> : <WifiOff size={18} />}
                     {status === 'connected' || status === 'processing' ? 'Reader Ready' : 'Reader Offline'}
@@ -101,8 +113,8 @@ export default function ScanPage() {
                     ) : (
                         <div className="flex flex-col items-center">
                             <div className={`h-24 w-24 rounded-full flex items-center justify-center mb-6 transition-colors ${status === 'connected'
-                                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
                                 }`}>
                                 <CreditCard size={48} />
                             </div>

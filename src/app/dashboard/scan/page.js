@@ -15,9 +15,11 @@ export default function ScanPage() {
         };
     }, []);
 
-    const connectWebSocket = () => {
-        // Use 127.0.0.1 instead of localhost for better mixed-content compatibility
-        const ws = new WebSocket('ws://127.0.0.1:8999');
+    const connectWebSocket = (address = '127.0.0.1') => {
+        const wsUrl = `ws://${address}:8999`;
+        console.log(`Attempting connection to ${wsUrl}`);
+
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -27,20 +29,21 @@ export default function ScanPage() {
 
         ws.onclose = (event) => {
             setStatus('disconnected');
-            // If the close code is related to security or connection failure immediately
             if (!event.wasClean) {
-                console.log('WS Close:', event);
+                // If 127.0.0.1 failed, try localhost next
+                if (address === '127.0.0.1') {
+                    console.warn('127.0.0.1 failed, retrying with localhost...');
+                    setTimeout(() => connectWebSocket('localhost'), 500); // Fast retry
+                } else {
+                    // Both failed, wait longer before standard retry (back to 127.0.0.1)
+                    setTimeout(() => connectWebSocket('127.0.0.1'), 5000);
+                }
             }
-            // Try reconnecting in 5s
-            setTimeout(connectWebSocket, 5000);
         };
 
         ws.onerror = (err) => {
             console.error('WS Error:', err);
-            // Help the user identify the Mixed Content issue
-            toast.error('Connection Failed. If on HTTPS, allow "Insecure Content" in site settings.', {
-                duration: 5000,
-            });
+            // Error usually precedes onclose, handling logic allows notification
         };
 
         ws.onmessage = async (event) => {

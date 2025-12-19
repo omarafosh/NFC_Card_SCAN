@@ -7,7 +7,7 @@ const sslConfig = process.env.NODE_ENV === 'production'
             rejectUnauthorized: true,
             ca: process.env.DB_SSL_CA
         }
-        : { rejectUnauthorized: true })
+        : { rejectUnauthorized: false })
     : false; // Disable SSL in development for easier local setup
 
 const pool = mysql.createPool({

@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Users, CreditCard, Tag, Settings, LogOut, History, Scan } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Tag, Settings, LogOut, History, Scan, ShieldAlert } from 'lucide-react';
 
 const menuItems = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -10,6 +10,8 @@ const menuItems = [
   { name: 'Cards', href: '/dashboard/cards', icon: CreditCard },
   { name: 'Discounts', href: '/dashboard/discounts', icon: Tag },
   { name: 'Transactions', href: '/dashboard/transactions', icon: History },
+  { name: 'Audit Logs', href: '/dashboard/logs', icon: ShieldAlert },
+  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
 
 export default function Sidebar({ user }) {
@@ -32,7 +34,13 @@ export default function Sidebar({ user }) {
       </div>
 
       <nav className="flex-1 p-4 space-y-2">
-        {menuItems.map((item) => {
+        {menuItems.filter(item => {
+          // Hide Admin-only items if user is not admin
+          if (['Settings', 'Discounts', 'Audit Logs'].includes(item.name)) {
+            return user?.role === 'admin';
+          }
+          return true;
+        }).map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
           return (

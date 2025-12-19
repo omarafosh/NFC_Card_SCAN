@@ -20,13 +20,13 @@ export async function POST(request) {
 
     try {
         const body = await request.json();
-        const { name, type, value, points_required } = body;
+        const { name, type, value, points_required, start_date, end_date } = body;
 
         if (!name || !value) return NextResponse.json({ message: 'Name and Value are required' }, { status: 400 });
 
         await pool.query(
-            'INSERT INTO discounts (name, type, value, points_required) VALUES (?, ?, ?, ?)',
-            [name, type, value, points_required || 0]
+            'INSERT INTO discounts (name, type, value, points_required, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)',
+            [name, type, value, points_required || 0, start_date || null, end_date || null]
         );
 
         return NextResponse.json({ message: 'Discount created' }, { status: 201 });

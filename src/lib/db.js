@@ -1,5 +1,15 @@
 import mysql from 'mysql2/promise';
 
+// Database SSL configuration
+const sslConfig = process.env.NODE_ENV === 'production'
+    ? (process.env.DB_SSL_CA
+        ? {
+            rejectUnauthorized: true,
+            ca: process.env.DB_SSL_CA
+        }
+        : { rejectUnauthorized: true })
+    : false; // Disable SSL in development for easier local setup
+
 const pool = mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
     port: process.env.DB_PORT || 3306,
@@ -9,9 +19,7 @@ const pool = mysql.createPool({
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    ssl: {
-        rejectUnauthorized: false
-    }
+    ssl: sslConfig
 });
 
 export default pool;

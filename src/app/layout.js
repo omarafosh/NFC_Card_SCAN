@@ -9,7 +9,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className="bg-gray-100 min-h-screen">
+      <body className="bg-gray-100 min-h-screen" suppressHydrationWarning={true}>
         {children}
         <Toaster position="top-right" richColors />
       </body>

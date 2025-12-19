@@ -60,3 +60,12 @@ nfc.on('error', (err) => {
     console.log('---');
     console.log('NOTE: If you see "PCSC not found" or build errors, ensure you have drivers installed.');
 });
+
+// Heartbeat to keep connections alive
+setInterval(() => {
+    broadcast({ type: 'PING' });
+    // Log connected clients count for debugging
+    const clientCount = wss.clients.size;
+    // console.log(`[System] Active clients: ${clientCount}`); 
+}, 30000); // Every 30 seconds
+

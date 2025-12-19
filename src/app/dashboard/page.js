@@ -18,8 +18,25 @@ async function getStats() {
     }
 }
 
+import DashboardCharts from '@/components/DashboardCharts';
+
 export default async function DashboardPage() {
     const stats = await getStats();
+
+    // Fetch Last 7 Days Chart Data
+    const [chartRows] = await pool.query(`
+        SELECT 
+            DATE_FORMAT(created_at, '%a') as name, 
+            SUM(amount_after) as sales, 
+            COUNT(*) as visits 
+        FROM transactions 
+        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) 
+        GROUP BY DATE(created_at), DATE_FORMAT(created_at, '%a') 
+        ORDER BY DATE(created_at) ASC
+    `);
+
+    // Fill in missing days if necessary (optional improvement, but raw query is a good start)
+    // For now we pass the raw rows. If no data exists for a day, it won't show, which is acceptable for v1.
 
     const statCards = [
         { title: 'Total Customers', value: stats.customerCount, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10' },
@@ -51,9 +68,8 @@ export default async function DashboardPage() {
                 })}
             </div>
 
-            <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-8 text-center text-gray-500">
-                <p>Recent transactions chart will appear here...</p>
-            </div>
+            {/* Charts Section */}
+            <DashboardCharts data={chartRows} />
         </div>
     );
 }

@@ -1,36 +1,133 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# NFC Discount System
 
-## Getting Started
+نظام متكامل لإدارة الخصومات والولاء باستخدام تقنية NFC (Near Field Communication).
 
-First, run the development server:
+## 🌟 المميزات
+
+- ✅ **مصادقة آمنة** - JWT tokens مع httpOnly cookies
+- ✅ **نظام نقاط الولاء** - تتبع وإدارة نقاط العملاء
+- ✅ **قارئ NFC** - دعم قراءة بطاقات NFC عبر WebSocket
+- ✅ **إدارة الخصومات** - خصومات نسبية، ثابتة، وهدايا
+- ✅ **تقارير وإحصائيات** - لوحة تحكم شاملة
+- ✅ **Rate Limiting** - حماية من الهجمات
+- ✅ **Audit Logs** - تتبع جميع العمليات الإدارية
+- ✅ **Caching Layer** - أداء محسّن
+- ✅ **Structured Logging** - تتبع شامل للأحداث
+
+## 📋 المتطلبات
+
+- Node.js v18+ 
+- MySQL 8.0+
+- قارئ NFC متوافق مع PC/SC (اختياري)
+
+## 🚀 التثبيت السريع
 
 ```bash
+# 1. Clone المشروع
+git clone <repository-url>
+cd nfc-discount-frontend
+
+# 2. تثبيت الحزم
+npm install
+
+# 3. إعداد قاعدة البيانات
+mysql -u root -p -e "CREATE DATABASE nfc_discount_system;"
+mysql -u root -p nfc_discount_system < database/schema.sql
+mysql -u root -p nfc_discount_system < database/migrations/001_add_indexes.sql
+
+# 4. إعداد البيئة
+cp .env.example .env
+# قم بتعديل .env وتعيين JWT_SECRET
+
+# 5. إنشاء المسؤول الأول
+node scripts/create-admin.js
+
+# 6. تشغيل التطبيق
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+التطبيق سيعمل على: `http://localhost:3000`
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## 🔐 الأمان
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### الميزات الأمنية المطبقة
 
-## Learn More
+- 🔒 **JWT Authentication** - مفتاح سري قوي إلزامي
+- 🔒 **Rate Limiting** - حماية شاملة من الهجمات
+- 🔒 **Security Headers** - CSP, X-Frame-Options, HSTS
+- 🔒 **SQL Injection Protection** - Prepared statements
+- 🔒 **Password Hashing** - bcrypt
+- 🔒 **SSL/TLS** - آمن في الإنتاج
+- 🔒 **Audit Logging** - تتبع جميع العمليات
+- 🔒 **Input Validation** - Zod schemas
 
-To learn more about Next.js, take a look at the following resources:
+## 📚 التوثيق الكامل
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+للتوثيق الشامل، راجع الملفات التالية:
+- [دليل التثبيت الكامل](docs/installation.md)
+- [API Documentation](docs/api.md)
+- [دليل النشر](docs/deployment.md)
+- [استكشاف الأخطاء](docs/troubleshooting.md)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🎯 الاستخدام السريع
 
-## Deploy on Vercel
+### تسجيل الدخول
+```
+URL: http://localhost:3000/login
+Username: admin (أو ما قمت بإنشائه)
+Password: your_password
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### لوحة التحكم
+```
+URL: http://localhost:3000/dashboard
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### API Endpoints
+```
+POST /api/auth/login
+POST /api/customers
+POST /api/cards
+POST /api/transactions
+POST /api/scan
+```
+
+## 🔧 البنية التقنية
+
+- **Frontend**: Next.js 16 (App Router)
+- **Styling**: Tailwind CSS
+- **Database**: MySQL 8.0+
+- **Authentication**: JWT + httpOnly Cookies
+- **Validation**: Zod
+- **Charts**: Recharts
+- **NFC**: WebSocket + PC/SC
+
+## 📊 الأداء
+
+- ⚡ **Caching**: In-memory cache مع TTL
+- ⚡ **Database Indexes**: محسّن للاستعلامات السريعة
+- ⚡ **Rate Limiting**: حماية الموارد
+- ⚡ **Optimized Queries**: استعلامات محسّنة
+
+## 🤝 المساهمة
+
+نرحب بالمساهمات! يرجى:
+1. Fork المشروع
+2. إنشاء branch للميزة الجديدة
+3. Commit التغييرات
+4. Push للـ branch
+5. فتح Pull Request
+
+## 📝 الترخيص
+
+ISC License
+
+## 📞 الدعم
+
+للمشاكل والاستفسارات، يرجى فتح Issue في GitHub.
+
+---
+
+**الإصدار:** 2.0.0  
+**آخر تحديث:** ديسمبر 2025  
+**الحالة:** ✅ جاهز للإنتاج

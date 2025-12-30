@@ -1,8 +1,0 @@
-CREATE TABLE IF NOT EXISTS audit_logs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    admin_id INT NOT NULL,
-    action_type VARCHAR(50) NOT NULL, -- e.g., 'UPDATE_SETTINGS', 'CREATE_DISCOUNT'
-    details TEXT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (admin_id) REFERENCES users(id)
-);

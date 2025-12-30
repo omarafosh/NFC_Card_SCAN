@@ -1,72 +1,186 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { History } from 'lucide-react';
+import { History, Receipt, ArrowDownRight, TrendingUp, Trash2, Download } from 'lucide-react';
+import { toast } from 'sonner';
+import { useLanguage } from '@/lib/LanguageContext';
+import DataTable from '@/components/DataTable';
 
 export default function TransactionsPage() {
+    const { t, dir } = useLanguage();
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
+        setMounted(true);
         async function fetchTx() {
             setLoading(true);
-            const res = await fetch('/api/transactions');
-            const data = await res.json();
-            setTransactions(data);
-            setLoading(false);
+            try {
+                const res = await fetch('/api/transactions');
+                const data = await res.json();
+                setTransactions(data.data || []);
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setLoading(false);
+            }
         }
         fetchTx();
     }, []);
 
-    return (
-        <div>
-            <h1 className="text-3xl font-bold mb-8 text-gray-800 dark:text-gray-100 flex items-center gap-3">
-                <History /> Transaction History
-            </h1>
+    const filteredTx = transactions.filter(tx =>
+        (tx.customer_name && tx.customer_name.toLowerCase().includes(search.toLowerCase())) ||
+        tx.id.toString().includes(search)
+    );
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left bg-white dark:bg-gray-800">
-                        <thead className="bg-gray-50 dark:bg-gray-900/50 text-gray-500 dark:text-gray-400 font-medium">
-                            <tr>
-                                <th className="p-4">ID</th>
-                                <th className="p-4">Customer</th>
-                                <th className="p-4">Discount Applied</th>
-                                <th className="p-4">Status</th>
-                                <th className="p-4 text-right">Date</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                            {loading ? (
-                                <tr><td colSpan="5" className="p-8 text-center text-gray-500">Loading...</td></tr>
-                            ) : transactions.length === 0 ? (
-                                <tr><td colSpan="5" className="p-8 text-center text-gray-500">No transactions yet</td></tr>
-                            ) : (
-                                transactions.map((tx) => (
-                                    <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                        <td className="p-4 font-mono text-xs text-gray-400">#{tx.id}</td>
-                                        <td className="p-4 font-medium text-gray-900 dark:text-white">{tx.customer_name || 'Unknown'}</td>
-                                        <td className="p-4">
-                                            {tx.discount_name ? (
-                                                <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">{tx.discount_name}</span>
-                                            ) : (
-                                                <span className="text-gray-400 text-sm">-</span>
-                                            )}
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${tx.status === 'success' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                                                {tx.status}
-                                            </span>
-                                        </td>
-                                        <td className="p-4 text-right text-gray-500 text-sm">
-                                            {new Date(tx.created_at).toLocaleString()}
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+    const handleExportCSV = () => {
+        if (transactions.length === 0) {
+            toast.error('No data to export');
+            return;
+        }
+
+        const headers = ['ID', 'Customer', 'Discount', 'Amount', 'Points', 'Status', 'Date'];
+        const rows = filteredTx.map(tx => [
+            tx.id,
+            `"${tx.customer_name}"`,
+            `"${tx.discount_name || 'N/A'}"`,
+            tx.amount_after,
+            tx.points_earned,
+            tx.status,
+            `"${new Date(tx.created_at).toLocaleString()}"`
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        toast.success('Exported successfully!');
+    };
+
+    const handleClearLogs = async () => {
+        if (!confirm(t('confirm_delete') || 'Are you sure you want to clear all logs?')) return;
+        try {
+            const res = await fetch('/api/transactions', { method: 'DELETE' });
+            if (res.ok) {
+                toast.success(t('delete_success'));
+                setTransactions([]);
+            }
+        } catch (e) {
+            toast.error(t('delete_error'));
+        }
+    };
+
+    const columns = [
+        {
+            header: 'ID',
+            accessor: 'id',
+            className: 'font-mono text-[10px] text-gray-400 w-16'
+        },
+        {
+            header: t('customer_name'),
+            accessor: 'customer_name',
+            className: 'font-bold text-gray-900 dark:text-white'
+        },
+        {
+            header: t('discount'),
+            accessor: 'discount_name',
+            cell: (row) => row.discount_name ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 uppercase tracking-widest">
+                    <TrendingUp size={10} />
+                    {row.discount_name}
+                </span>
+            ) : (
+                <span className="text-gray-300">---</span>
+            )
+        },
+        {
+            header: t('amount'),
+            accessor: 'amount_after',
+            className: 'font-mono font-bold text-gray-900 dark:text-white'
+        },
+        {
+            header: t('customer_points'),
+            accessor: 'points_earned',
+            cell: (row) => (
+                <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
+                    +{row.points_earned}
+                </span>
+            )
+        },
+        {
+            header: t('status'),
+            accessor: 'status',
+            cell: (row) => (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${row.status === 'success' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                    {row.status === 'success' ? 'SUCCESS' : 'FAILED'}
+                </span>
+            )
+        },
+        {
+            header: t('date'),
+            accessor: 'created_at',
+            cell: (row) => (
+                <div className="text-gray-400 text-[11px] font-medium">
+                    {new Date(row.created_at).toLocaleString(dir === 'rtl' ? 'ar-EG' : 'en-US')}
+                </div>
+            )
+        }
+    ];
+
+    if (!mounted) return null;
+
+    return (
+        <div className="space-y-6" suppressHydrationWarning>
+            <div className={`flex justify-between items-center mb-8`}>
+                <div className="h-12 w-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500">
+                    <History size={24} />
+                </div>
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white flex items-center gap-3 text-start">
+                        {t('nav_transactions')}
+                        <span className="text-sm font-normal text-gray-400 mt-1">Audit Trail</span>
+                    </h1>
                 </div>
             </div>
+
+            <DataTable
+                columns={columns}
+                data={filteredTx}
+                loading={loading}
+                searchTerm={search}
+                onSearchChange={setSearch}
+                searchPlaceholder={t('search')}
+                actions={
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleExportCSV}
+                            className="bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-bold border border-blue-100"
+                        >
+                            <Download size={16} />
+                            {t('export') || 'Export CSV'}
+                        </button>
+                        <button
+                            onClick={handleClearLogs}
+                            className="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-bold border border-red-100"
+                        >
+                            <Trash2 size={16} />
+                            {t('delete')}
+                        </button>
+                    </div>
+                }
+            />
         </div>
     );
 }

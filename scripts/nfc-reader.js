@@ -1,71 +1,147 @@
 import { NFC } from 'nfc-pcsc';
-import { WebSocketServer } from 'ws';
+import { createClient } from '@supabase/supabase-js';
+import { config } from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
 
-// Configuration
-const WS_PORT = 8999;
+// Load environment variables
+config();
 
-// Initialize WebSocket Server
-const wss = new WebSocketServer({ port: WS_PORT });
+const CONFIG_FILE = path.join(process.cwd(), '.terminal-config.json');
 
-console.log(`[NFC Middleware] WebSocket Server running on ws://localhost:${WS_PORT}`);
+// Supabase Configuration
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-wss.on('connection', (ws) => {
-    console.log('[WS] Client connected');
-    ws.send(JSON.stringify({ type: 'STATUS', message: 'Connected to NFC Middleware' }));
-
-    ws.on('close', () => console.log('[WS] Client disconnected'));
-});
-
-// Broadcast helper
-function broadcast(data) {
-    wss.clients.forEach((client) => {
-        if (client.readyState === 1) { // OPEN
-            client.send(JSON.stringify(data));
-        }
-    });
+if (!supabaseUrl || !supabaseKey) {
+    console.error('❌ Error: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env');
+    process.exit(1);
 }
 
-// Initialize NFC
-console.log('[NFC] Initializing PCSC...');
-const nfc = new NFC();
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-nfc.on('reader', (reader) => {
-    console.log(`[NFC] Reader found: ${reader.name}`);
-    broadcast({ type: 'READER_STATUS', status: 'connected', name: reader.name });
-
-    reader.on('card', (card) => {
-        const uid = card.uid;
-        console.log(`[NFC] Card detected! UID: ${uid}`);
-
-        // Send UID to all connected clients (The Frontend)
-        broadcast({ type: 'CARD_SCAN', uid: uid });
-    });
-
-    reader.on('card.off', (card) => {
-        console.log('[NFC] Card removed');
-    });
-
-    reader.on('error', (err) => {
-        console.error(`[NFC] Reader error:`, err);
-    });
-
-    reader.on('end', () => {
-        console.log(`[NFC] Reader removed: ${reader.name}`);
-        broadcast({ type: 'READER_STATUS', status: 'disconnected' });
-    });
+// Helper for user input
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
 });
 
-nfc.on('error', (err) => {
-    console.error('[NFC] Error:', err);
-    console.log('---');
-    console.log('NOTE: If you see "PCSC not found" or build errors, ensure you have drivers installed.');
-});
+const question = (query) => new Promise((resolve) => rl.question(query, resolve));
 
-// Heartbeat to keep connections alive
-setInterval(() => {
-    broadcast({ type: 'PING' });
-    // Log connected clients count for debugging
-    const clientCount = wss.clients.size;
-    // console.log(`[System] Active clients: ${clientCount}`); 
-}, 30000); // Every 30 seconds
+async function getTerminalConfig() {
+    // 1. Try to load from file
+    if (fs.existsSync(CONFIG_FILE)) {
+        try {
+            const fileConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+            if (fileConfig.TERMINAL_ID && fileConfig.BRANCH_ID) {
+                return fileConfig;
+            }
+        } catch (e) {
+            console.error('⚠️  Error reading config file, recreating...');
+        }
+    }
 
+    // 2. Fallback to .env (Legacy support)
+    if (process.env.TERMINAL_ID && process.env.BRANCH_ID) {
+        return {
+            TERMINAL_ID: parseInt(process.env.TERMINAL_ID),
+            BRANCH_ID: parseInt(process.env.BRANCH_ID)
+        };
+    }
+
+    // 3. Ask user (First run setup)
+    console.log('\n⚙️  First Time Setup');
+    console.log('--------------------------------------------------');
+
+    // Fetch available branches (Optional, for better UX)
+    // For now, simple input
+
+    const branchId = await question('🏢 Enter Branch ID (default 1): ') || '1';
+    const terminalId = await question('📍 Enter Terminal ID (e.g. 1, 2, 3): ');
+
+    if (!terminalId) {
+        console.error('❌ Terminal ID is required!');
+        process.exit(1);
+    }
+
+    const newConfig = {
+        TERMINAL_ID: parseInt(terminalId),
+        BRANCH_ID: parseInt(branchId)
+    };
+
+    // Save to file
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
+    console.log(`✅ Configuration saved to ${CONFIG_FILE}\n`);
+
+    return newConfig;
+}
+
+(async () => {
+    const { TERMINAL_ID, BRANCH_ID } = await getTerminalConfig();
+
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('🚀 NFC Reader - Supabase Realtime Edition');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log(`📍 Terminal ID: ${TERMINAL_ID}`);
+    console.log(`🏢 Branch ID:   ${BRANCH_ID}`);
+    console.log(`🔗 Supabase:    ${supabaseUrl}`);
+    console.log('═══════════════════════════════════════════════════════════\n');
+
+    // Initialize NFC
+    console.log('[NFC] Initializing PC/SC reader...');
+    const nfc = new NFC();
+
+    nfc.on('reader', (reader) => {
+        console.log(`\n✅ [NFC] Reader detected: ${reader.name}`);
+        console.log('[NFC] Waiting for cards...\n');
+
+        reader.on('card', async (card) => {
+            const uid = card.uid;
+
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log(`🔔 [CARD DETECTED]`);
+            console.log(`   UID: ${uid}`);
+            console.log(`   Time: ${new Date().toLocaleString()}`);
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+            try {
+                const { data, error } = await supabase
+                    .from('scan_events')
+                    .insert([{
+                        terminal_id: TERMINAL_ID,
+                        branch_id: BRANCH_ID,
+                        uid: uid,
+                        processed: false
+                    }]);
+
+                if (error) {
+                    console.error('❌ [Supabase] Error:', error.message);
+                } else {
+                    console.log(`✅ [Supabase] Broadcasted successfully for Terminal ${TERMINAL_ID}`);
+                }
+            } catch (err) {
+                console.error('❌ [Error]', err.message);
+            }
+        });
+
+        reader.on('card.off', () => {
+            // console.log('📤 [NFC] Card removed'); 
+        });
+
+        reader.on('error', (err) => {
+            console.error(`❌ [NFC] Reader error:`, err.message);
+        });
+
+        reader.on('end', () => {
+            console.log(`\n⚠️  [NFC] Reader disconnected: ${reader.name}`);
+        });
+    });
+
+    nfc.on('error', (err) => {
+        console.error('\n❌ [NFC] Error:', err.message);
+    });
+
+    // Handle Ctrl+C to close readline cleanly if it's open (though we await close above)
+    // But mainly to keep process alive
+})();

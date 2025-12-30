@@ -114,3 +114,65 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     locked_until TIMESTAMP NULL,
     UNIQUE KEY unique_ip_user (ip_address, username)
 );
+
+-- ========================================================
+-- INDEXES & OPTIMIZATIONS
+-- ========================================================
+
+-- Transactions
+CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
+CREATE INDEX idx_transactions_created_at ON transactions(created_at DESC);
+CREATE INDEX idx_transactions_status ON transactions(status);
+CREATE INDEX idx_transactions_discount_id ON transactions(discount_id);
+
+-- Points Ledger
+CREATE INDEX idx_points_customer_id ON points_ledger(customer_id);
+CREATE INDEX idx_points_transaction_id ON points_ledger(transaction_id);
+CREATE INDEX idx_points_created_at ON points_ledger(created_at DESC);
+
+-- Cards
+CREATE INDEX idx_cards_customer_id ON cards(customer_id);
+CREATE INDEX idx_cards_is_active ON cards(is_active);
+CREATE INDEX idx_cards_uid ON cards(uid);
+
+-- Customers
+CREATE INDEX idx_customers_phone ON customers(phone);
+CREATE INDEX idx_customers_email ON customers(email);
+
+-- Audit Logs
+CREATE INDEX idx_audit_logs_admin_id ON audit_logs(admin_id);
+CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at DESC);
+CREATE INDEX idx_audit_action_type ON audit_logs(action_type);
+
+-- Login Attempts
+CREATE INDEX idx_login_attempts_locked_until ON login_attempts(locked_until);
+CREATE INDEX idx_login_attempts_last_attempt ON login_attempts(last_attempt_at DESC);
+
+-- Branches Table
+CREATE TABLE IF NOT EXISTS branches (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    location VARCHAR(255),
+    is_active TINYINT(1) DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Terminals Table (NFC Reader Machines)
+CREATE TABLE IF NOT EXISTS terminals (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    branch_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    connection_url VARCHAR(255), -- ws:// or wss:// URL (Optional if using Push)
+    terminal_secret VARCHAR(100) NOT NULL, -- Secret for push-based ingestion
+    is_active TINYINT(1) DEFAULT 1,
+    last_seen TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE
+);
+
+-- Indexes for branches/terminals
+CREATE INDEX idx_terminals_branch_id ON terminals(branch_id);
+CREATE INDEX idx_terminals_is_active ON terminals(is_active);
+CREATE INDEX idx_branches_is_active ON branches(is_active);

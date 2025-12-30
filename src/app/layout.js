@@ -1,5 +1,6 @@
 import '../styles/globals.css'
 import { Toaster } from 'sonner';
+import { LanguageProvider } from '@/lib/LanguageContext';
 
 export const metadata = {
   title: 'NFC Discount System',
@@ -8,10 +9,12 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-100 min-h-screen" suppressHydrationWarning={true}>
-        {children}
-        <Toaster position="top-right" richColors />
+    <html lang="en" suppressHydrationWarning>
+      <body className="bg-gray-100 min-h-screen font-sans" suppressHydrationWarning>
+        <LanguageProvider>
+          {children}
+          <Toaster position="top-right" richColors />
+        </LanguageProvider>
       </body>
     </html>
   )

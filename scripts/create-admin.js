@@ -1,24 +1,27 @@
 #!/usr/bin/env node
 
 /**
- * Create Admin User Script
+ * Create Admin User Script (Supabase Version)
  * 
- * This script creates the first admin user for the NFC Discount System.
- * Use this for initial setup in production instead of auto-creation.
- * 
- * Usage:
- *   node scripts/create-admin.js
- * 
- * You will be prompted for username and password.
+ * This script creates the first admin user for the NFC Discount System in Supabase.
  */
 
 import bcrypt from 'bcryptjs';
-import mysql from 'mysql2/promise';
+import { createClient } from '@supabase/supabase-js';
 import readline from 'readline';
 import { config } from 'dotenv';
 
 // Load environment variables
 config();
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+if (!supabaseUrl || !supabaseKey) {
+    console.error('❌ Error: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY) must be set in .env');
+    process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -30,32 +33,24 @@ function question(query) {
 }
 
 async function createAdmin() {
-    console.log('🔐 NFC Discount System - Create Admin User\n');
+    console.log('🔐 NFC Discount System - Create Admin User (Supabase)\n');
 
     try {
-        // Connect to database
-        const connection = await mysql.createConnection({
-            host: process.env.DB_HOST || 'localhost',
-            port: process.env.DB_PORT || 3306,
-            user: process.env.DB_USER || 'root',
-            password: process.env.DB_PASSWORD || '',
-            database: process.env.DB_NAME || 'nfc_discount_system',
-        });
-
-        console.log('✅ Connected to database\n');
+        console.log('✅ Connecting to Supabase...');
 
         // Check if admin already exists
-        const [existingAdmins] = await connection.query(
-            'SELECT COUNT(*) as count FROM users WHERE role = ?',
-            ['admin']
-        );
+        const { count, error: countError } = await supabase
+            .from('users')
+            .select('*', { count: 'exact', head: true })
+            .eq('role', 'admin');
 
-        if (existingAdmins[0].count > 0) {
+        if (countError) throw countError;
+
+        if (count > 0) {
             console.log('⚠️  Warning: Admin users already exist in the database.');
             const confirm = await question('Do you want to create another admin? (yes/no): ');
             if (confirm.toLowerCase() !== 'yes') {
                 console.log('Operation cancelled.');
-                await connection.end();
                 rl.close();
                 return;
             }
@@ -67,20 +62,21 @@ async function createAdmin() {
 
         if (!username || username.length < 3) {
             console.error('❌ Username must be at least 3 characters long.');
-            await connection.end();
             rl.close();
             return;
         }
 
         // Check if username exists
-        const [existingUser] = await connection.query(
-            'SELECT id FROM users WHERE username = ?',
-            [username]
-        );
+        const { data: existingUser, error: checkError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('username', username)
+            .maybeSingle();
 
-        if (existingUser.length > 0) {
+        if (checkError) throw checkError;
+
+        if (existingUser) {
             console.error('❌ Username already exists. Please choose a different username.');
-            await connection.end();
             rl.close();
             return;
         }
@@ -90,7 +86,6 @@ async function createAdmin() {
 
         if (!password || password.length < 8) {
             console.error('❌ Password must be at least 8 characters long.');
-            await connection.end();
             rl.close();
             return;
         }
@@ -100,7 +95,6 @@ async function createAdmin() {
 
         if (password !== confirmPassword) {
             console.error('❌ Passwords do not match.');
-            await connection.end();
             rl.close();
             return;
         }
@@ -110,18 +104,22 @@ async function createAdmin() {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Insert admin user
-        const [result] = await connection.query(
-            'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
-            [username, hashedPassword, 'admin']
-        );
+        const { data: newUser, error: insertError } = await supabase
+            .from('users')
+            .insert([
+                { username, password_hash: hashedPassword, role: 'admin' }
+            ])
+            .select()
+            .single();
+
+        if (insertError) throw insertError;
 
         console.log(`✅ Admin user created successfully!`);
         console.log(`   Username: ${username}`);
-        console.log(`   User ID: ${result.insertId}`);
+        console.log(`   User ID: ${newUser.id}`);
         console.log(`   Role: admin\n`);
         console.log('🎉 You can now login with these credentials.\n');
 
-        await connection.end();
         rl.close();
 
     } catch (error) {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { rateLimitMiddleware, RATE_LIMITS } from '@/lib/rateLimit';
 
@@ -29,9 +29,16 @@ export async function POST(request) {
         if (!uid) return NextResponse.json({ message: 'UID is required' }, { status: 400 });
 
         // 1. Find the card
-        const [cards] = await pool.query('SELECT * FROM cards WHERE uid = ? AND is_active = 1', [uid]);
+        const { data: card, error: cardError } = await supabase
+            .from('cards')
+            .select('*')
+            .eq('uid', uid)
+            .eq('is_active', true)
+            .maybeSingle();
 
-        if (cards.length === 0) {
+        if (cardError) throw cardError;
+
+        if (!card) {
             return NextResponse.json({
                 status: 'unknown_card',
                 message: 'Card not registered',
@@ -39,37 +46,44 @@ export async function POST(request) {
             });
         }
 
-        const card = cards[0];
-
         // 2. Find the customer
-        const [customers] = await pool.query('SELECT * FROM customers WHERE id = ?', [card.customer_id]);
-        if (customers.length === 0) {
+        const { data: customer, error: custError } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('id', card.customer_id)
+            .single();
+
+        if (custError) throw custError;
+
+        if (!customer) {
             return NextResponse.json({
                 status: 'error',
                 message: 'Card is assigned to a missing customer'
             });
         }
-        const customer = customers[0];
 
         // 3. Find applicable/available discounts (Rewards)
-        // Check for active discounts where the user has enough points
-        const [discounts] = await pool.query(`
-            SELECT * FROM discounts 
-            WHERE is_active = 1 
-            AND (start_date IS NULL OR start_date <= NOW())
-            AND (end_date IS NULL OR end_date >= NOW())
-            AND (points_required = 0 OR points_required <= ?)
-            ORDER BY points_required DESC
-        `, [customer.points_balance]);
+        const now = new Date().toISOString();
 
-        // We can return the "Best" discount or a list. For now, let's return all available.
-        // Or if the logic is "Apply best automatic discount", we pick one. 
-        // Typically, rewards are "Available to redeem".
+        let discountQuery = supabase
+            .from('discounts')
+            .select('*')
+            .eq('is_active', true)
+            .lte('points_required', customer.points_balance || 0);
 
-        // Let's pass the full list of available rewards to the frontend
-        const availableRewards = discounts;
+        // Filter by date (Complex filters might need raw SQL or careful chaining)
+        const { data: discounts, error: discError } = await discountQuery
+            .order('points_required', { ascending: false });
 
-        // Fetch user's stats or last visit could be added here
+        if (discError) throw discError;
+
+        // Note: Filter dates in JS for simplicity or use raw SQL if needed.
+        // For project scale, JS filtering for dates is fine.
+        const availableRewards = discounts.filter(d => {
+            const startOk = !d.start_date || d.start_date <= now;
+            const endOk = !d.end_date || d.end_date >= now;
+            return startOk && endOk;
+        });
 
         return NextResponse.json({
             status: 'success',

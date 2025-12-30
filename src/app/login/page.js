@@ -7,9 +7,12 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showTwoFactor, setShowTwoFactor] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [tempToken, setTempToken] = useState('');
   const router = useRouter();
 
-  const handleSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
 
@@ -23,10 +26,15 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        toast.success('Welcome back!');
-        router.push('/dashboard');
+        if (data.twoFactorRequired) {
+          setTempToken(data.tempToken);
+          setShowTwoFactor(true);
+          toast.info('Please enter your 2FA code');
+        } else {
+          toast.success('Welcome back!');
+          router.push('/dashboard');
+        }
       } else {
-        // Handle validation errors from Zod
         if (data.errors) {
           Object.values(data.errors).flat().forEach(err => toast.error(err));
         } else {
@@ -34,11 +42,78 @@ export default function LoginPage() {
         }
       }
     } catch (err) {
-      toast.error('An unexpected error occurred. Please try again.');
+      toast.error('An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleTwoFactorVerify = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tempToken, token: twoFactorCode }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        toast.success('Verified successfully!');
+        router.push('/dashboard');
+      } else {
+        toast.error(data.message || 'Invalid code');
+      }
+    } catch (err) {
+      toast.error('Verification failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (showTwoFactor) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+        <div className="w-full max-w-md p-8 bg-gray-800 rounded-lg shadow-2xl border border-gray-700 animate-in fade-in slide-in-from-bottom-4">
+          <h2 className="text-3xl font-bold mb-6 text-center text-blue-400">Two-Factor Authentication</h2>
+          <p className="text-gray-400 text-center mb-8">Enter the 6-digit code from your authenticator app</p>
+
+          <form onSubmit={handleTwoFactorVerify} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Authentication Code</label>
+              <input
+                type="text"
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest outline-none transition-all placeholder-gray-500 text-white font-mono"
+                placeholder="000000"
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                maxLength={6}
+                required
+                autoFocus
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || twoFactorCode.length !== 6}
+              className={`w-full py-3 px-4 rounded-lg font-semibold bg-blue-600 hover:bg-blue-500 transition-all ${loading ? 'opacity-75' : ''}`}
+            >
+              {loading ? 'Verifying...' : 'Verify'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowTwoFactor(false)}
+              className="w-full text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              Back to Login
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
@@ -46,7 +121,7 @@ export default function LoginPage() {
         <h2 className="text-3xl font-bold mb-6 text-center text-blue-400">NFC Discount System</h2>
         <p className="text-gray-400 text-center mb-8">Please sign in to continue</p>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleLogin} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">Username</label>
             <input

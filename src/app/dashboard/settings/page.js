@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Save, Settings as SettingsIcon, Coins, DollarSign } from 'lucide-react';
+import TwoFactorSetup from '@/components/TwoFactorSetup';
 
 export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
@@ -14,7 +15,7 @@ export default function SettingsPage() {
         fetch('/api/settings')
             .then(res => res.json())
             .then(data => {
-                setSettings(data);
+                setSettings(data.data || { currency_symbol: 'SAR', points_ratio: '10' });
                 setLoading(false);
             })
             .catch(err => {
@@ -116,6 +117,14 @@ export default function SettingsPage() {
                         </button>
                     </div>
                 </form>
+            </div>
+
+            {/* Security Section */}
+            <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+                <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white flex items-center gap-2">
+                    Security
+                </h2>
+                <TwoFactorSetup />
             </div>
         </div>
     );

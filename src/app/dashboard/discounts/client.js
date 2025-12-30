@@ -1,19 +1,25 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Plus, Tag, Percent, DollarSign, Gift, Calendar, Trash2 } from 'lucide-react';
+import { Plus, Tag, Percent, DollarSign, Gift, Calendar, Trash2, TicketPercent, Edit } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLanguage } from '@/lib/LanguageContext';
+import DataTable from '@/components/DataTable';
 
 export default function DiscountsClient() {
+    const { t, dir } = useLanguage();
     const [discounts, setDiscounts] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [formData, setFormData] = useState({
+        id: null,
         name: '',
         type: 'percentage',
         value: '',
         points_required: 0,
         start_date: '',
-        end_date: ''
+        end_date: '',
+        is_active: true
     });
 
     const fetchDiscounts = async () => {
@@ -21,9 +27,9 @@ export default function DiscountsClient() {
         try {
             const res = await fetch('/api/discounts');
             const data = await res.json();
-            setDiscounts(data);
+            setDiscounts(data.data || []);
         } catch (e) {
-            toast.error('Failed to fetch discounts');
+            toast.error(t('error_loading'));
         } finally {
             setLoading(false);
         }
@@ -35,180 +41,275 @@ export default function DiscountsClient() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const isEdit = !!formData.id;
         try {
-            const res = await fetch('/api/discounts', {
-                method: 'POST',
+            const res = await fetch(isEdit ? `/api/discounts/${formData.id}` : '/api/discounts', {
+                method: isEdit ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData),
             });
             if (res.ok) {
-                toast.success('Discount created');
+                toast.success(t('save_success'));
                 setShowModal(false);
-                setFormData({ name: '', type: 'percentage', value: '', points_required: 0, start_date: '', end_date: '' });
+                setFormData({ id: null, name: '', type: 'percentage', value: '', points_required: 0, start_date: '', end_date: '', is_active: true });
                 fetchDiscounts();
             } else {
-                toast.error('Failed to create discount');
+                toast.error(t('save_error'));
             }
         } catch (err) {
-            toast.error('Network error');
+            toast.error(t('network_error'));
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (!confirm(t('confirm_delete'))) return;
+        try {
+            const res = await fetch(`/api/discounts/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                toast.success(t('delete_success'));
+                fetchDiscounts();
+            }
+        } catch (e) {
+            toast.error(t('delete_error'));
         }
     };
 
     const getTypeIcon = (type) => {
         switch (type) {
-            case 'percentage': return <Percent size={18} />;
-            case 'fixed_amount': return <DollarSign size={18} />;
-            case 'gift': return <Gift size={18} />;
-            default: return <Tag size={18} />;
+            case 'percentage': return <Percent size={14} />;
+            case 'fixed_amount': return <DollarSign size={14} />;
+            case 'gift': return <Gift size={14} />;
+            default: return <Tag size={14} />;
         }
     };
 
+    const filteredDiscounts = discounts.filter(d =>
+        d.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const columns = [
+        {
+            header: t('discount_name'),
+            accessor: 'name',
+            className: 'font-bold text-gray-900 dark:text-white'
+        },
+        {
+            header: t('discount_type'),
+            accessor: 'type',
+            cell: (row) => (
+                <div className="flex items-center gap-2">
+                    <span className={`p-1.5 rounded-lg ${row.type === 'percentage' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/20'}`}>
+                        {getTypeIcon(row.type)}
+                    </span>
+                    <span className="text-xs font-medium">{t(row.type)}</span>
+                </div>
+            )
+        },
+        {
+            header: t('discount_value'),
+            accessor: 'value',
+            cell: (row) => (
+                <span className="text-lg font-black text-green-600 dark:text-green-400">
+                    {row.type === 'percentage' ? `${row.value}%` : `$${row.value}`}
+                </span>
+            )
+        },
+        {
+            header: t('discount_points'),
+            accessor: 'points_required',
+            cell: (row) => (
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${row.points_required > 0 ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {row.points_required > 0 ? `${row.points_required} PTS` : 'AUTO'}
+                </span>
+            )
+        },
+        {
+            header: t('status'),
+            accessor: 'is_active',
+            cell: (row) => (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${row.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {row.is_active ? 'ACTIVE' : 'INACTIVE'}
+                </span>
+            )
+        },
+        {
+            header: t('actions'),
+            className: 'w-24',
+            cell: (row) => (
+                <div className="flex gap-1 justify-center">
+                    <button
+                        onClick={() => {
+                            setFormData({
+                                id: row.id,
+                                name: row.name,
+                                type: row.type,
+                                value: row.value,
+                                points_required: row.points_required,
+                                start_date: row.start_date ? new Date(row.start_date).toISOString().slice(0, 16) : '',
+                                end_date: row.end_date ? new Date(row.end_date).toISOString().slice(0, 16) : '',
+                                is_active: row.is_active
+                            });
+                            setShowModal(true);
+                        }}
+                        className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                    >
+                        <Edit size={16} />
+                    </button>
+                    <button
+                        onClick={() => handleDelete(row.id)}
+                        className="p-2 text-gray-300 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                        <Trash2 size={16} />
+                    </button>
+                </div>
+            )
+        }
+    ];
+
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Discounts</h1>
+        <div className="space-y-6" suppressHydrationWarning>
+            <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-4`}>
                 <button
                     onClick={() => setShowModal(true)}
-                    className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-md"
+                    className="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
                 >
                     <Plus size={20} />
-                    New Discount
+                    {t('add_discount')}
                 </button>
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
+                        {t('nav_discounts')}
+                        <span className="text-sm font-normal text-gray-400 mt-1">Offers Library</span>
+                    </h1>
+                </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {loading ? (
-                    <div className="col-span-full text-center py-10 text-gray-500">Loading discounts...</div>
-                ) : discounts.length === 0 ? (
-                    <div className="col-span-full text-center py-10 text-gray-500">No discounts active.</div>
-                ) : (
-                    discounts.map((discount) => (
-                        <div key={discount.id} className="relative bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{discount.name}</h3>
-                                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-4">
-                                        <span className={`p-1 rounded ${discount.type === 'percentage' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-                                            {getTypeIcon(discount.type)}
-                                        </span>
-                                        <span className="capitalize">{discount.type.replace('_', ' ')}</span>
-                                    </div>
-                                    <div className="text-3xl font-bold text-green-600 mb-2">
-                                        {discount.type === 'percentage' ? `${discount.value}%` : `$${discount.value}`}
-                                        <span className="text-xs text-gray-400 font-normal ml-1">OFF</span>
-                                    </div>
-                                    {discount.points_required > 0 && (
-                                        <div className="text-xs text-purple-600 font-semibold mt-2 flex items-center gap-1">
-                                            <Tag size={12} /> Requires {discount.points_required} Points
-                                        </div>
-                                    )}
-                                    {(discount.start_date || discount.end_date) && (
-                                        <div className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                                            <Calendar size={12} />
-                                            {discount.start_date ? new Date(discount.start_date).toLocaleDateString() : 'Now'}
-                                            {' -> '}
-                                            {discount.end_date ? new Date(discount.end_date).toLocaleDateString() : 'Forever'}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className={`px-2 py-1 rounded text-xs font-semibold ${discount.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                    {discount.is_active ? 'Active' : 'Inactive'}
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
+            <DataTable
+                columns={columns}
+                data={filteredDiscounts}
+                loading={loading}
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
+                searchPlaceholder={t('search')}
+            />
 
-            {/* Add Modal */}
+            {/* Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4 overflow-y-auto max-h-[90vh] animate-in fade-in zoom-in duration-200">
-                        <h2 className="text-xl font-bold mb-4 dark:text-white">Create Discount</h2>
-                        <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-lg animate-in fade-in zoom-in duration-200">
+                        <div className={`flex items-center gap-2 mb-2 text-green-600 ${dir === 'rtl' ? 'justify-end' : ''}`}>
+                            <TicketPercent size={18} />
+                            <span className="text-xs font-bold uppercase tracking-widest">Promotion Logic</span>
+                        </div>
+                        <h2 className={`text-2xl font-bold mb-6 dark:text-white text-start`}>
+                            {formData.id ? t('edit') : t('add_discount')}
+                        </h2>
+                        <form onSubmit={handleSubmit} className="space-y-5">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Discount Name</label>
+                                <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2 text-start`}>
+                                    {t('discount_name')}
+                                </label>
                                 <input
                                     type="text"
                                     required
-                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-green-500 outline-none"
+                                    className={`w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-green-500 transition-all text-start`}
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
+                                    <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2 text-start`}>
+                                        {t('discount_type')}
+                                    </label>
                                     <select
-                                        className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-green-500 outline-none"
+                                        className={`w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-green-500 transition-all text-start`}
                                         value={formData.type}
                                         onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                                     >
-                                        <option value="percentage">Percentage (%)</option>
-                                        <option value="fixed_amount">Fixed Amount ($)</option>
-                                        <option value="gift">Gift Item</option>
+                                        <option value="percentage">{t('percentage')}</option>
+                                        <option value="fixed_amount">{t('fixed_amount')}</option>
+                                        <option value="gift">{t('gift')}</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Value</label>
+                                    <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2 text-start`}>
+                                        {t('discount_value')}
+                                    </label>
                                     <input
                                         type="number"
                                         required
-                                        className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-green-500 outline-none"
+                                        className={`w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-green-500 transition-all text-start`}
                                         value={formData.value}
                                         onChange={(e) => setFormData({ ...formData, value: e.target.value })}
                                     />
                                 </div>
                             </div>
 
-                            {/* Points Requirement */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Points Required (Redemption Cost)</label>
+                                <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2 text-start`}>
+                                    {t('discount_points')}
+                                </label>
                                 <input
                                     type="number"
-                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-green-500 outline-none"
+                                    className={`w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-green-500 transition-all text-start`}
                                     value={formData.points_required}
                                     onChange={(e) => setFormData({ ...formData, points_required: e.target.value })}
-                                    placeholder="0 for automatic discount"
+                                    placeholder="0 = Auto apply"
                                 />
-                                <p className="text-xs text-gray-500 mt-1">If set to 0, this discount is applied automatically if valid. If &gt; 0, it requires point redemption.</p>
                             </div>
 
-                            {/* Date Range */}
-                            <div className="grid grid-cols-2 gap-4 border-t pt-4 border-gray-100 dark:border-gray-700">
+                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-50 dark:border-gray-700">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date (Optional)</label>
+                                    <label className={`block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+                                        {t('discount_start')}
+                                    </label>
                                     <input
                                         type="datetime-local"
-                                        className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-green-500 outline-none"
+                                        className={`w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg text-xs dark:text-white outline-none ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
                                         value={formData.start_date || ''}
                                         onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date (Optional)</label>
+                                    <label className={`block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+                                        {t('discount_end')}
+                                    </label>
                                     <input
                                         type="datetime-local"
-                                        className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-green-500 outline-none"
+                                        className={`w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg text-xs dark:text-white outline-none ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
                                         value={formData.end_date || ''}
                                         onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
                                     />
                                 </div>
                             </div>
 
-                            <div className="flex justify-end gap-3 mt-6">
+                            {formData.id && (
+                                <div className="flex items-center gap-2 mt-4">
+                                    <input
+                                        type="checkbox"
+                                        id="is_active"
+                                        checked={formData.is_active}
+                                        onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                                        className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                    />
+                                    <label htmlFor="is_active" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        {t('is_active')}
+                                    </label>
+                                </div>
+                            )}
+
+                            <div className="flex gap-4 pt-4">
+                                <button type="submit" className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all">{t('save')}</button>
                                 <button
                                     type="button"
-                                    onClick={() => setShowModal(false)}
-                                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
+                                    onClick={() => {
+                                        setShowModal(false);
+                                        setFormData({ id: null, name: '', type: 'percentage', value: '', points_required: 0, start_date: '', end_date: '', is_active: true });
+                                    }}
+                                    className="flex-1 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold text-gray-600 dark:text-gray-300"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 transition-colors"
-                                >
-                                    Create Discount
+                                    {t('cancel')}
                                 </button>
                             </div>
                         </form>

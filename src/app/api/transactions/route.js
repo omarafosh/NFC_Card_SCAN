@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { rateLimitMiddleware, RATE_LIMITS } from '@/lib/rateLimit';
+import { successResponse, handleApiError } from '@/lib/errorHandler';
 
 export async function GET(request) {
     const session = await getSession();
@@ -27,25 +28,33 @@ export async function GET(request) {
     const customerId = url.searchParams.get('customer_id');
 
     try {
-        let query = `
-            SELECT t.*, c.full_name as customer_name, d.name as discount_name
-            FROM transactions t
-            LEFT JOIN customers c ON t.customer_id = c.id
-            LEFT JOIN discounts d ON t.discount_id = d.id
-        `;
-        const params = [];
+        let query = supabase
+            .from('transactions')
+            .select(`
+                *,
+                customers (full_name),
+                discounts (name)
+            `);
 
         if (customerId) {
-            query += ' WHERE t.customer_id = ?';
-            params.push(customerId);
+            query = query.eq('customer_id', customerId);
         }
 
-        query += ' ORDER BY t.created_at DESC LIMIT 50';
+        const { data, error } = await query
+            .order('created_at', { ascending: false })
+            .limit(50);
 
-        const [rows] = await pool.query(query, params);
-        return NextResponse.json(rows);
+        if (error) throw error;
+
+        const rows = data.map(t => ({
+            ...t,
+            customer_name: t.customers?.full_name || null,
+            discount_name: t.discounts?.name || null
+        }));
+
+        return successResponse(rows);
     } catch (error) {
-        return NextResponse.json({ message: 'Database error' }, { status: 500 });
+        return handleApiError(error, 'GET /api/transactions');
     }
 }
 
@@ -79,14 +88,28 @@ export async function POST(request) {
 
         // 1. Validate & Apply Discount
         if (discount_id) {
-            const [discounts] = await pool.query('SELECT * FROM discounts WHERE id = ?', [discount_id]);
-            if (discounts.length > 0) {
-                discount = discounts[0];
+            const { data: discountData, error: discountErr } = await supabase
+                .from('discounts')
+                .select('*')
+                .eq('id', discount_id)
+                .single();
+
+            if (discountErr) throw discountErr;
+
+            if (discountData) {
+                discount = discountData;
 
                 // Verify points
                 if (discount.points_required > 0) {
-                    const [cust] = await pool.query('SELECT points_balance FROM customers WHERE id = ?', [customer_id]);
-                    if (cust[0].points_balance < discount.points_required) {
+                    const { data: cust, error: custErr } = await supabase
+                        .from('customers')
+                        .select('points_balance')
+                        .eq('id', customer_id)
+                        .single();
+
+                    if (custErr) throw custErr;
+
+                    if (cust.points_balance < discount.points_required) {
                         return NextResponse.json({ message: 'Insufficient points for this reward' }, { status: 400 });
                     }
                     points_to_deduct = discount.points_required;
@@ -107,13 +130,24 @@ export async function POST(request) {
         const points_earned = await calculatePoints(amount_after);
 
         // 3. Create Transaction
-        const [result] = await pool.query(
-            `INSERT INTO transactions 
-            (customer_id, card_id, discount_id, amount_before, amount_after, points_earned, status) 
-            VALUES (?, ?, ?, ?, ?, ?, 'success')`,
-            [customer_id, card_id, discount_id || null, amount, amount_after, points_earned]
-        );
-        const transaction_id = result.insertId;
+        const { data: transaction, error: transError } = await supabase
+            .from('transactions')
+            .insert([
+                {
+                    customer_id,
+                    card_id,
+                    discount_id: discount_id || null,
+                    amount_before: amount,
+                    amount_after,
+                    points_earned,
+                    status: 'success'
+                }
+            ])
+            .select()
+            .single();
+
+        if (transError) throw transError;
+        const transaction_id = transaction.id;
 
         // 4. Log Points
         // A. Deduction (Redemption)
@@ -134,19 +168,32 @@ export async function POST(request) {
                 points: points_earned,
                 reason: 'Purchase Reward',
                 transaction_id,
-                admin_id: session.id // technically system/cashier
+                admin_id: session.id
             });
         }
 
-        return NextResponse.json({
+        return successResponse({
             status: 'success',
             transaction_id,
             points_earned,
             amount_after
-        });
+        }, 201);
 
     } catch (error) {
-        console.error('Transaction Error:', error);
-        return NextResponse.json({ message: 'Transaction failed' }, { status: 500 });
+        return handleApiError(error, 'POST /api/transactions');
+    }
+}
+export async function DELETE(request) {
+    const session = await getSession();
+    if (!session || session.role !== 'admin') {
+        return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    }
+
+    try {
+        const { error } = await supabase.from('transactions').delete().neq('id', 0); // Delete all
+        if (error) throw error;
+        return successResponse({ message: 'Audit trail cleared' });
+    } catch (error) {
+        return handleApiError(error, 'DELETE /api/transactions');
     }
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { customerSchema } from '@/lib/schemas';
 import { rateLimitMiddleware, RATE_LIMITS } from '@/lib/rateLimit';
@@ -30,19 +30,19 @@ export async function GET(request) {
         const url = new URL(request.url);
         const search = url.searchParams.get('search') || '';
 
-        let query = 'SELECT * FROM customers ORDER BY created_at DESC';
-        let params = [];
+        let query = supabase.from('customers').select('*');
 
         if (search) {
-            query = 'SELECT * FROM customers WHERE full_name LIKE ? OR phone LIKE ? ORDER BY created_at DESC';
-            params = [`%${search}%`, `%${search}%`];
+            query = query.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%`);
         }
 
-        const [rows] = await pool.query(query, params);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
-        apiLogger.info('Customers retrieved', { count: rows.length, search });
+        if (error) throw error;
 
-        return successResponse(rows, 200, null);
+        apiLogger.info('Customers retrieved', { count: data.length, search });
+
+        return successResponse(data, 200, null);
 
     } catch (error) {
         return handleApiError(error, 'GET /api/customers');
@@ -78,17 +78,45 @@ export async function POST(request) {
             throw validationError('Invalid input', validation.error.flatten().fieldErrors);
         }
 
-        const { full_name, phone, email } = validation.data;
+        const { full_name, phone, email, uid } = validation.data;
 
-        const [result] = await pool.query(
-            'INSERT INTO customers (full_name, phone, email) VALUES (?, ?, ?)',
-            [full_name, phone, email]
-        );
+        // 1. Create Customer
+        const { data: customer, error: custError } = await supabase
+            .from('customers')
+            .insert([{ full_name, phone, email }])
+            .select()
+            .single();
 
-        apiLogger.info('Customer created', { id: result.insertId, full_name });
+        if (custError) throw custError;
+        const customerId = customer.id;
+
+        // 2. Create Card if UID provided
+        if (uid) {
+            // Check if card already exists and is active
+            const { data: existingCard } = await supabase
+                .from('cards')
+                .select('id')
+                .eq('uid', uid)
+                .eq('is_active', true)
+                .maybeSingle();
+
+            if (existingCard) {
+                // Cleanup partial customer if needed (though RLS/DB constraints might handle this better)
+                // For now, return error.
+                return NextResponse.json({ message: 'Card already registered' }, { status: 400 });
+            }
+
+            const { error: cardError } = await supabase
+                .from('cards')
+                .insert([{ uid, customer_id: customerId, is_active: true }]);
+
+            if (cardError) throw cardError;
+        }
+
+        apiLogger.info('Customer created', { id: customerId, full_name, hasCard: !!uid });
 
         return createdResponse(
-            { id: result.insertId, full_name, phone, email },
+            { id: customerId, full_name, phone, email, uid },
             'Customer created successfully'
         );
 

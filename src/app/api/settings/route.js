@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { getSystemSettings } from '@/lib/loyalty';
 import { logAudit } from '@/lib/audit';
+import cache, { CacheKeys } from '@/lib/cache';
+import { successResponse, handleApiError } from '@/lib/errorHandler';
 
 export async function GET() {
     const session = await getSession();
     if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
     const settings = await getSystemSettings();
-    return NextResponse.json(settings);
+    return successResponse(settings);
 }
 
 export async function POST(request) {
@@ -21,20 +23,27 @@ export async function POST(request) {
     try {
         const body = await request.json();
 
-        // Upsert settings
+        // Upsert settings in Supabase
         const keys = Object.keys(body);
-        for (const key of keys) {
-            await pool.query(
-                'INSERT INTO settings (key_name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
-                [key, String(body[key])]
-            );
-        }
+        const upsertData = keys.map(key => ({
+            key_name: key,
+            value: String(body[key])
+        }));
+
+        const { error } = await supabase
+            .from('settings')
+            .upsert(upsertData, { onConflict: 'key_name' });
+
+        if (error) throw error;
 
         // Audit Log
         await logAudit(session.id, 'UPDATE_SETTINGS', body);
 
-        return NextResponse.json({ message: 'Settings saved' });
+        // Clear Settings Cache
+        cache.delete(CacheKeys.SETTINGS);
+
+        return successResponse(null, 200, 'Settings saved');
     } catch (error) {
-        return NextResponse.json({ message: 'Error saving settings' }, { status: 500 });
+        return handleApiError(error, 'POST /api/settings');
     }
 }

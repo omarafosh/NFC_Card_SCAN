@@ -1,4 +1,4 @@
-import pool from './db';
+import { supabase } from './supabase';
 
 /**
  * Logs an administrative action to the database.
@@ -9,10 +9,13 @@ import pool from './db';
 export async function logAudit(adminId, actionType, details) {
     try {
         const detailsString = typeof details === 'object' ? JSON.stringify(details) : details;
-        await pool.query(
-            'INSERT INTO audit_logs (admin_id, action_type, details) VALUES (?, ?, ?)',
-            [adminId, actionType, detailsString]
-        );
+        const { error } = await supabase
+            .from('audit_logs')
+            .insert([
+                { admin_id: adminId, action_type: actionType, details: detailsString }
+            ]);
+
+        if (error) throw error;
     } catch (e) {
         console.error('Failed to write audit log:', e);
         // Do not throw, so we don't block the main action if logging fails

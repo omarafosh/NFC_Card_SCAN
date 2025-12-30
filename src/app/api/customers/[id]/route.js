@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 
 export async function PUT(request, { params }) {
@@ -11,13 +11,16 @@ export async function PUT(request, { params }) {
         const body = await request.json();
         const { full_name, phone, email } = body;
 
-        await pool.query(
-            'UPDATE customers SET full_name = ?, phone = ?, email = ? WHERE id = ?',
-            [full_name, phone, email, id]
-        );
+        const { error } = await supabase
+            .from('customers')
+            .update({ full_name, phone, email })
+            .eq('id', id);
+
+        if (error) throw error;
 
         return NextResponse.json({ message: 'Customer updated' });
     } catch (error) {
+        console.error('PUT /api/customers/[id] error:', error);
         return NextResponse.json({ message: 'Database error' }, { status: 500 });
     }
 }
@@ -28,9 +31,16 @@ export async function DELETE(request, { params }) {
     const { id } = await params;
 
     try {
-        await pool.query('DELETE FROM customers WHERE id = ?', [id]);
+        const { error } = await supabase
+            .from('customers')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
         return NextResponse.json({ message: 'Customer deleted' });
     } catch (error) {
+        console.error('DELETE /api/customers/[id] error:', error);
         return NextResponse.json({ message: 'Database error' }, { status: 500 });
     }
 }

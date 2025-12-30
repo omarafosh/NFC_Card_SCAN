@@ -1,75 +1,121 @@
-import { Users, CreditCard, Tag, Activity } from 'lucide-react';
-import pool from '@/lib/db';
+'use client';
 
-async function getStats() {
-    // In a real scenario, these would be parallel DB queries
-    // For now, let's fetch real counts if tables exist, or default to 0
-    try {
-        const [[{ count: customerCount }]] = await pool.query('SELECT COUNT(*) as count FROM customers');
-        const [[{ count: cardCount }]] = await pool.query('SELECT COUNT(*) as count FROM cards');
-        const [[{ count: activeDiscounts }]] = await pool.query('SELECT COUNT(*) as count FROM discounts WHERE is_active = 1');
-        // Transactions count
-        const [[{ count: txCount }]] = await pool.query('SELECT COUNT(*) as count FROM transactions');
+import { useState, useEffect } from 'react';
+import { Users, Coins, CreditCard, Activity, ArrowRight } from 'lucide-react';
+import StatsCard from '@/components/analytics/StatsCard';
+import TransactionsChart from '@/components/analytics/TransactionsChart';
+import { toast } from 'sonner';
 
-        return { customerCount, cardCount, activeDiscounts, txCount };
-    } catch (e) {
-        console.error("Error fetching stats:", e);
-        return { customerCount: 0, cardCount: 0, activeDiscounts: 0, txCount: 0 };
+export default function Dashboard() {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetch('/api/analytics/dashboard')
+            .then(res => res.json())
+            .then(json => {
+                if (json.data) {
+                    setData(json.data);
+                } else {
+                    toast.error('Failed to load dashboard data');
+                }
+                setLoading(false);
+            })
+            .catch(err => {
+                console.error(err);
+                toast.error('Network error');
+                setLoading(false);
+            });
+    }, []);
+
+    if (loading) {
+        return <div className="p-8 text-center text-gray-500">Loading Dashboard...</div>;
     }
-}
 
-import DashboardCharts from '@/components/DashboardCharts';
-
-export default async function DashboardPage() {
-    const stats = await getStats();
-
-    // Fetch Last 7 Days Chart Data
-    const [chartRows] = await pool.query(`
-        SELECT 
-            DATE_FORMAT(created_at, '%a') as name, 
-            SUM(amount_after) as sales, 
-            COUNT(*) as visits 
-        FROM transactions 
-        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) 
-        GROUP BY DATE(created_at), DATE_FORMAT(created_at, '%a') 
-        ORDER BY DATE(created_at) ASC
-    `);
-
-    // Fill in missing days if necessary (optional improvement, but raw query is a good start)
-    // For now we pass the raw rows. If no data exists for a day, it won't show, which is acceptable for v1.
-
-    const statCards = [
-        { title: 'Total Customers', value: stats.customerCount, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-        { title: 'Registered Cards', value: stats.cardCount, icon: CreditCard, color: 'text-purple-500', bg: 'bg-purple-500/10' },
-        { title: 'Active Discounts', value: stats.activeDiscounts, icon: Tag, color: 'text-green-500', bg: 'bg-green-500/10' },
-        { title: 'Total Transactions', value: stats.txCount, icon: Activity, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-    ];
+    if (!data) return null;
 
     return (
-        <div>
-            <h1 className="text-3xl font-bold mb-8 text-gray-800 dark:text-gray-100">Dashboard Overview</h1>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {statCards.map((stat, index) => {
-                    const Icon = stat.icon;
-                    return (
-                        <div key={index} className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{stat.title}</p>
-                                    <h3 className="text-2xl font-bold mt-2 text-gray-900 dark:text-white">{stat.value}</h3>
-                                </div>
-                                <div className={`p-4 rounded-lg ${stat.bg}`}>
-                                    <Icon className={stat.color} size={24} />
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
+        <div className="space-y-8 animate-in fade-in duration-500" suppressHydrationWarning>
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard Overview</h1>
+                    <p className="text-gray-500 mt-1">Real-time statistics and recent activity.</p>
+                </div>
             </div>
 
-            {/* Charts Section */}
-            <DashboardCharts data={chartRows} />
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <StatsCard
+                    title="Total Customers"
+                    value={data.totalCustomers}
+                    icon={Users}
+                    color="blue"
+                />
+                <StatsCard
+                    title="Total Points"
+                    value={data.totalPoints.toLocaleString()}
+                    icon={Coins}
+                    color="orange"
+                />
+                <StatsCard
+                    title="Total Transactions"
+                    value={data.totalTransactions}
+                    icon={CreditCard}
+                    color="purple"
+                />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Chart Section */}
+                <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                            <Activity className="w-5 h-5 text-blue-500" />
+                            Transaction History
+                        </h3>
+                        <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Last 7 Days</span>
+                    </div>
+                    <TransactionsChart data={data.chartData} />
+                </div>
+
+                {/* Recent Activity Section */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Recent Activity</h3>
+                    <div className="space-y-6">
+                        {data.recentActivity && data.recentActivity.length > 0 ? (
+                            data.recentActivity.map((tx) => (
+                                <div key={tx.id} className="flex items-start gap-4">
+                                    <div className={`p-2 rounded-full ${tx.points > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                        <Coins className="w-4 h-4" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                            {tx.customers?.full_name}
+                                        </p>
+                                        <p className="text-xs text-gray-500 truncate">{tx.reason || 'Transaction'}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`text-sm font-bold ${tx.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {tx.points > 0 ? '+' : ''}{tx.points}
+                                        </p>
+                                        <p className="text-xs text-gray-400">
+                                            {new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-sm text-gray-500 text-center py-4">No recent activity</p>
+                        )}
+
+                        {data.recentActivity.length > 0 && (
+                            <button className="w-full mt-4 text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center justify-center gap-1 transition-colors">
+                                View All Transactions <ArrowRight className="w-3 h-3" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

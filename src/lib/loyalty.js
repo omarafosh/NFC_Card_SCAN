@@ -1,4 +1,4 @@
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import cache, { CacheKeys } from '@/lib/cache';
 import { LOYALTY } from '@/lib/constants';
 
@@ -12,7 +12,9 @@ export async function getSystemSettings() {
         CacheKeys.SETTINGS,
         async () => {
             try {
-                const [rows] = await pool.query('SELECT * FROM settings');
+                const { data: rows, error } = await supabase.from('settings').select('*');
+                if (error) throw error;
+
                 const settings = {};
                 rows.forEach(row => {
                     settings[row.key_name] = row.value;
@@ -56,19 +58,38 @@ export async function calculatePoints(amount) {
  * @param {string} params.reason
  * @param {number} [params.transaction_id]
  * @param {number} [params.admin_id]
- * @param {any} [params.connection] Optional transaction connection
  */
-export async function logPoints({ customer_id, points, reason, transaction_id, admin_id, connection }) {
-    const db = connection || pool;
+export async function logPoints({ customer_id, points, reason, transaction_id, admin_id }) {
+    // 1. Log to ledger
+    const { error: ledgerError } = await supabase
+        .from('points_ledger')
+        .insert([{
+            customer_id,
+            points,
+            reason,
+            transaction_id: transaction_id || null,
+            admin_id: admin_id || null
+        }]);
 
-    await db.query(
-        'INSERT INTO points_ledger (customer_id, points, reason, transaction_id, admin_id) VALUES (?, ?, ?, ?, ?)',
-        [customer_id, points, reason, transaction_id || null, admin_id || null]
-    );
+    if (ledgerError) throw ledgerError;
 
-    // Update customer balance directly
-    await db.query(
-        'UPDATE customers SET points_balance = points_balance + ? WHERE id = ?',
-        [points, customer_id]
-    );
+    // 2. Update customer balance
+    // In Supabase, we can use a raw update or an RPC for "increment".
+    // For simplicity until RPC is needed:
+    const { data: customer, error: fetchError } = await supabase
+        .from('customers')
+        .select('points_balance')
+        .eq('id', customer_id)
+        .single();
+
+    if (fetchError) throw fetchError;
+
+    const newBalance = (customer.points_balance || 0) + points;
+
+    const { error: updateError } = await supabase
+        .from('customers')
+        .update({ points_balance: newBalance })
+        .eq('id', customer_id);
+
+    if (updateError) throw updateError;
 }

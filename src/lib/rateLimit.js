@@ -1,11 +1,11 @@
 /**
- * Rate Limiting Utility
+ * Rate Limiting Utility (Supabase Version)
  * 
  * Provides rate limiting functionality for API routes to prevent abuse.
- * Uses database-backed storage for distributed rate limiting.
+ * Uses Supabase-backed storage for distributed rate limiting.
  */
 
-import pool from './db.js';
+import { supabase } from '@/lib/supabase';
 import { apiLogger } from './logger.js';
 
 /**
@@ -48,50 +48,50 @@ export async function checkRateLimit(identifier, endpoint, config = RATE_LIMITS.
     const windowStart = new Date(now.getTime() - config.windowMs);
 
     try {
-        // Create rate_limits table if it doesn't exist
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS rate_limits (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                key_name VARCHAR(255) NOT NULL,
-                attempt_count INT DEFAULT 1,
-                window_start TIMESTAMP NOT NULL,
-                last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_key_window (key_name, window_start)
-            )
-        `);
-
         // Clean up old entries (older than window)
-        await pool.query(
-            'DELETE FROM rate_limits WHERE window_start < ?',
-            [windowStart]
-        );
+        // Note: In Supabase, we do this as needed to keep the table lean.
+        await supabase
+            .from('rate_limits')
+            .delete()
+            .lt('window_start', windowStart.toISOString());
 
         // Get current rate limit status
-        const [rows] = await pool.query(
-            'SELECT * FROM rate_limits WHERE key_name = ? AND window_start >= ?',
-            [key, windowStart]
-        );
+        const { data: record, error: fetchError } = await supabase
+            .from('rate_limits')
+            .select('*')
+            .eq('key_name', key)
+            .gte('window_start', windowStart.toISOString())
+            .maybeSingle();
+
+        if (fetchError) throw fetchError;
 
         let attemptCount = 0;
         let resetAt = new Date(now.getTime() + config.windowMs);
 
-        if (rows.length > 0) {
-            const record = rows[0];
+        if (record) {
             attemptCount = record.attempt_count;
-            resetAt = new Date(record.window_start.getTime() + config.windowMs);
+            resetAt = new Date(new Date(record.window_start).getTime() + config.windowMs);
 
             // Increment attempt count
-            await pool.query(
-                'UPDATE rate_limits SET attempt_count = attempt_count + 1, last_attempt = NOW() WHERE id = ?',
-                [record.id]
-            );
+            const { error: updateError } = await supabase
+                .from('rate_limits')
+                .update({
+                    attempt_count: record.attempt_count + 1,
+                    last_attempt: now.toISOString()
+                })
+                .eq('id', record.id);
+
+            if (updateError) throw updateError;
             attemptCount++;
         } else {
             // Create new rate limit record
-            await pool.query(
-                'INSERT INTO rate_limits (key_name, attempt_count, window_start) VALUES (?, 1, ?)',
-                [key, now]
-            );
+            const { error: insertError } = await supabase
+                .from('rate_limits')
+                .insert([
+                    { key_name: key, attempt_count: 1, window_start: now.toISOString(), last_attempt: now.toISOString() }
+                ]);
+
+            if (insertError) throw insertError;
             attemptCount = 1;
         }
 
@@ -147,10 +147,12 @@ export async function resetRateLimit(identifier, endpoint) {
     const key = `${endpoint}:${identifier}`;
 
     try {
-        await pool.query(
-            'DELETE FROM rate_limits WHERE key_name = ?',
-            [key]
-        );
+        const { error } = await supabase
+            .from('rate_limits')
+            .delete()
+            .eq('key_name', key);
+
+        if (error) throw error;
         return true;
     } catch (error) {
         console.error('Error resetting rate limit:', error);

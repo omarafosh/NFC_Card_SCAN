@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
+import { logPoints } from '@/lib/loyalty';
+import { successResponse, handleApiError } from '@/lib/errorHandler';
 
 export async function POST(request) {
     const session = await getSession();
@@ -12,55 +14,73 @@ export async function POST(request) {
 
         if (!uid) return NextResponse.json({ message: 'UID is required' }, { status: 400 });
 
-        // 1. Find Card & Customer
-        const [cards] = await pool.query(`
-            SELECT c.*, cust.full_name, cust.points_balance, cust.id as customer_id
-            FROM cards c
-            JOIN customers cust ON c.customer_id = cust.id
-            WHERE c.uid = ? AND c.is_active = 1
-        `, [uid]);
+        // 1. Find Card & Customer in Supabase
+        const { data: card, error: cardError } = await supabase
+            .from('cards')
+            .select('*, customers(full_name, points_balance, id)')
+            .eq('uid', uid)
+            .eq('is_active', true)
+            .maybeSingle();
 
-        if (cards.length === 0) {
+        if (cardError) throw cardError;
+
+        if (!card) {
             return NextResponse.json({ success: false, message: 'Card not found or inactive' }, { status: 404 });
         }
 
-        const card = cards[0];
+        const customer = card.customers;
 
-        // 2. Find Best Active Discount (Simple logic: highest value percentage)
-        // In real app, this might be complex rules.
-        const [discounts] = await pool.query(`
-            SELECT * FROM discounts 
-            WHERE is_active = 1 
-            ORDER BY value DESC 
-            LIMIT 1
-        `);
+        // 2. Find Best Active Discount
+        const { data: discounts, error: discError } = await supabase
+            .from('discounts')
+            .select('*')
+            .eq('is_active', true)
+            .order('value', { ascending: false })
+            .limit(1);
+
+        if (discError) throw discError;
 
         let appliedDiscount = null;
-        if (discounts.length > 0) {
+        if (discounts && discounts.length > 0) {
             appliedDiscount = discounts[0];
         }
 
-        // 3. Log Transaction
-        await pool.query(
-            'INSERT INTO transactions (customer_id, card_id, discount_id, status) VALUES (?, ?, ?, ?)',
-            [card.customer_id, card.id, appliedDiscount ? appliedDiscount.id : null, 'success']
-        );
+        // 3. Create Transaction
+        const { data: transaction, error: transError } = await supabase
+            .from('transactions')
+            .insert([
+                {
+                    customer_id: customer.id,
+                    card_id: card.id,
+                    discount_id: appliedDiscount ? appliedDiscount.id : null,
+                    status: 'success'
+                }
+            ])
+            .select()
+            .single();
 
-        // 4. Update points (e.g., +10 points per scan)
-        await pool.query('UPDATE customers SET points_balance = points_balance + 10 WHERE id = ?', [card.customer_id]);
+        if (transError) throw transError;
 
-        return NextResponse.json({
+        // 4. Update points (+10 points per scan via logPoints)
+        await logPoints({
+            customer_id: customer.id,
+            points: 10,
+            reason: 'Card Scan Reward',
+            transaction_id: transaction.id,
+            admin_id: session.id
+        });
+
+        return successResponse({
             success: true,
             customer: {
-                name: card.full_name,
-                points: card.points_balance + 10 // optimistically active
+                name: customer.full_name,
+                points: (customer.points_balance || 0) + 10
             },
             discount: appliedDiscount,
             message: 'Scan successful'
         });
 
     } catch (error) {
-        console.error(error);
-        return NextResponse.json({ success: false, message: 'System error' }, { status: 500 });
+        return handleApiError(error, 'POST /api/cards/scan');
     }
 }

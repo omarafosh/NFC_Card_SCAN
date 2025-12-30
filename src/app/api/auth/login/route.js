@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import jwt from 'jsonwebtoken';
+import { supabase } from '@/lib/supabase';
 import bcrypt from 'bcryptjs';
 import { signToken } from '@/lib/auth';
 import { cookies } from 'next/headers';
 import { loginSchema } from '@/lib/schemas';
 import { AUTH, ERROR_CODES, ENV } from '@/lib/constants';
-import { handleApiError, authError } from '@/lib/errorHandler';
+import { handleApiError } from '@/lib/errorHandler';
 import { authLogger } from '@/lib/logger';
 
 export async function POST(request) {
@@ -26,12 +27,17 @@ export async function POST(request) {
         // Get IP
         const ip = request.headers.get('x-forwarded-for') || 'unknown';
 
-        // 1. Check Rate Limit
-        const [attempts] = await pool.query('SELECT * FROM login_attempts WHERE ip_address = ? AND username = ?', [ip, username]);
-        if (attempts.length > 0) {
-            const attempt = attempts[0];
-            if (attempt.locked_until && new Date(attempt.locked_until) > new Date()) {
-                const waitMinutes = Math.ceil((new Date(attempt.locked_until) - new Date()) / 60000);
+        // 1. Check Rate Limit via Supabase
+        const { data: attempts } = await supabase
+            .from('login_attempts')
+            .select('*')
+            .eq('ip_address', ip)
+            .eq('username', username)
+            .maybeSingle();
+
+        if (attempts) {
+            if (attempts.locked_until && new Date(attempts.locked_until) > new Date()) {
+                const waitMinutes = Math.ceil((new Date(attempts.locked_until) - new Date()) / 60000);
                 authLogger.warn('Account locked', { username, ip, waitMinutes });
                 return NextResponse.json({
                     message: `Account locked. Try again in ${waitMinutes} minutes.`,
@@ -40,53 +46,34 @@ export async function POST(request) {
             }
         }
 
-        const [rows] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
-        let user = rows[0];
+        // 2. Find User
+        const { data: user, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .maybeSingle();
 
-        // Auto-create admin ONLY in development if explicitly allowed
-        // This is a convenience feature for initial setup - NEVER use in production
-        if (!user && username === 'admin' && password === 'admin') {
-            // Check if auto-admin creation is allowed
-            const allowAutoAdmin = process.env.ALLOW_AUTO_ADMIN === 'true';
-            const isDevelopment = ENV.isDevelopment;
-
-            if (!allowAutoAdmin || !isDevelopment) {
-                // Log security warning
-                authLogger.warn(
-                    'Attempted to auto-create admin account - BLOCKED',
-                    { allowAutoAdmin, isDevelopment, ip }
-                );
-                return NextResponse.json({
-                    message: 'Invalid credentials. For first-time setup, use the create-admin script.'
-                }, { status: 401 });
-            }
-
-            // Only reached in development with ALLOW_AUTO_ADMIN=true
-            authLogger.warn('Creating default admin account (development only)', { ip });
-            const hashedPassword = await bcrypt.hash('admin', 10);
-            const [result] = await pool.query(
-                'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
-                ['admin', hashedPassword, 'admin']
-            );
-
-            user = {
-                id: result.insertId,
-                username: 'admin',
-                role: 'admin',
-                password_hash: hashedPassword
-            };
-        }
+        if (userError) throw userError;
 
         if (!user || !(await bcrypt.compare(password, user.password_hash))) {
             // Increment fail count
-            await pool.query(`
-                INSERT INTO login_attempts (ip_address, username, attempt_count, last_attempt_at) 
-                VALUES (?, ?, 1, NOW()) 
-                ON DUPLICATE KEY UPDATE 
-                    attempt_count = attempt_count + 1, 
-                    last_attempt_at = NOW(),
-                    locked_until = CASE WHEN attempt_count >= ? THEN DATE_ADD(NOW(), INTERVAL ? MINUTE) ELSE NULL END
-             `, [ip, username, AUTH.MAX_LOGIN_ATTEMPTS, AUTH.LOGIN_LOCK_DURATION_MINUTES]);
+            const currentCount = (attempts?.attempt_count || 0) + 1;
+            let lockedUntil = null;
+
+            if (currentCount >= AUTH.MAX_LOGIN_ATTEMPTS) {
+                const lockDuration = AUTH.LOGIN_LOCK_DURATION_MINUTES || 15;
+                lockedUntil = new Date(Date.now() + lockDuration * 60000).toISOString();
+            }
+
+            await supabase
+                .from('login_attempts')
+                .upsert({
+                    ip_address: ip,
+                    username: username,
+                    attempt_count: currentCount,
+                    last_attempt_at: new Date().toISOString(),
+                    locked_until: lockedUntil
+                }, { onConflict: 'ip_address,username' });
 
             authLogger.warn('Failed login attempt', { username, ip });
             return NextResponse.json({
@@ -95,8 +82,28 @@ export async function POST(request) {
             }, { status: 401 });
         }
 
-        // Reset fail count on success
-        await pool.query('DELETE FROM login_attempts WHERE ip_address = ? AND username = ?', [ip, username]);
+        // 3. Reset fail count on success
+        await supabase
+            .from('login_attempts')
+            .delete()
+            .eq('ip_address', ip)
+            .eq('username', username);
+
+        // CHECK 2FA
+        if (user.two_factor_enabled) {
+            // Generate temporary token for 2FA verification (valid for 5 mins)
+            const tempToken = jwt.sign(
+                { id: user.id, scope: '2fa_login' },
+                process.env.JWT_SECRET,
+                { expiresIn: '5m' }
+            );
+
+            authLogger.info('2FA challenge required', { username });
+            return NextResponse.json({
+                twoFactorRequired: true,
+                tempToken: tempToken
+            });
+        }
 
         const token = signToken({ id: user.id, username: user.username, role: user.role });
 

@@ -1,21 +1,34 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
+import { successResponse, handleApiError, createdResponse } from '@/lib/errorHandler';
 
 export async function GET(request) {
     const session = await getSession();
     if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
     try {
-        const [rows] = await pool.query(`
-            SELECT cards.*, customers.full_name as customer_name 
-            FROM cards 
-            LEFT JOIN customers ON cards.customer_id = customers.id 
-            ORDER BY cards.created_at DESC
-        `);
-        return NextResponse.json(rows);
+        const { data, error } = await supabase
+            .from('cards')
+            .select(`
+                *,
+                customers (
+                    full_name
+                )
+            `)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Map for frontend compatibility
+        const rows = data.map(card => ({
+            ...card,
+            customer_name: card.customers?.full_name || null
+        }));
+
+        return successResponse(rows);
     } catch (error) {
-        return NextResponse.json({ message: 'Database error' }, { status: 500 });
+        return handleApiError(error, 'GET /api/cards');
     }
 }
 
@@ -29,20 +42,27 @@ export async function POST(request) {
 
         if (!uid) return NextResponse.json({ message: 'UID is required' }, { status: 400 });
 
-        // simple check if uid exists
-        const [existing] = await pool.query('SELECT id FROM cards WHERE uid = ?', [uid]);
-        if (existing.length > 0) {
+        // Check if UID exists using Supabase
+        const { data: existing } = await supabase
+            .from('cards')
+            .select('id')
+            .eq('uid', uid)
+            .maybeSingle();
+
+        if (existing) {
             return NextResponse.json({ message: 'Card UID already registered' }, { status: 400 });
         }
 
-        await pool.query(
-            'INSERT INTO cards (uid, customer_id, is_active) VALUES (?, ?, ?)',
-            [uid, customer_id || null, true]
-        );
+        const { error } = await supabase
+            .from('cards')
+            .insert([
+                { uid, customer_id: customer_id || null, is_active: true }
+            ]);
 
-        return NextResponse.json({ message: 'Card registered' }, { status: 201 });
+        if (error) throw error;
+
+        return createdResponse({ uid, customer_id }, 'Card registered successfully');
     } catch (error) {
-        console.error(error);
-        return NextResponse.json({ message: 'Database error' }, { status: 500 });
+        return handleApiError(error, 'POST /api/cards');
     }
 }

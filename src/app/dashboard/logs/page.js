@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { ShieldAlert } from 'lucide-react';
 
 export default async function LogsPage() {
@@ -9,14 +9,25 @@ export default async function LogsPage() {
         redirect('/dashboard');
     }
 
-    // Fetch logs with admin username
-    const [logs] = await pool.query(`
-        SELECT l.*, u.username 
-        FROM audit_logs l 
-        JOIN users u ON l.admin_id = u.id 
-        ORDER BY l.created_at DESC 
-        LIMIT 100
-    `);
+    // Fetch logs with admin username from Supabase
+    const { data, error } = await supabase
+        .from('audit_logs')
+        .select(`
+            *,
+            users!audit_logs_admin_id_fkey (username)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+    if (error) {
+        console.error('Audit Logs Error:', error);
+    }
+
+    // Map for frontend compatibility
+    const logs = data?.map(l => ({
+        ...l,
+        username: l.users?.username || 'System'
+    })) || [];
 
     return (
         <div className="max-w-6xl mx-auto">

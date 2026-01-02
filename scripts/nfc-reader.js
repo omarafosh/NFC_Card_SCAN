@@ -4,28 +4,33 @@ import { config } from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 
+// ---------------------------------------------------------
+// 🔒 SECURE EMBEDDED CONFIGURATION (DO NOT SHARE SOURCE)
+// ---------------------------------------------------------
+const EMBEDDED_URL = "https://zdirmkypfxuamjbdkwhb.supabase.co";
+const EMBEDDED_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkaXJta3lwZnh1YW1qYmRrd2hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjE1MzgxNCwiZXhwIjoyMDgxNzI5ODE0fQ.CORI1-tLzRPgdqVYxY_HX6eGDasc0l8s9muSS-eGIuk";
+// ---------------------------------------------------------
+
 // Optional dependency
 let notifier = null;
 try {
     import('node-notifier').then(m => {
         notifier = m.default;
-    }).catch(() => {
-        // Silently fail if not found
-    });
+    }).catch(() => { });
 } catch (e) { }
 
-// Load environment variables
+// Load environment variables for local overrides if needed
 config();
 
 const CONFIG_FILE = path.join(process.cwd(), 'terminal-config.json');
 const LOG_FILE = path.join(process.cwd(), 'reader.log');
 
-// Supabase Configuration
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Supabase Configuration priority: ENV -> EMBEDDED
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || EMBEDDED_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || EMBEDDED_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-    log('❌ Error: Supabase credentials missing.');
+    console.error('❌ Error: Supabase credentials missing.');
     process.exit(1);
 }
 
@@ -59,121 +64,108 @@ function getTerminalConfig() {
             log('⚠️ Error reading config file.');
         }
     }
-
-    // Default if no file (for first run or env backup)
     return {
-        TERMINAL_ID: parseInt(process.env.TERMINAL_ID) || null,
-        BRANCH_ID: parseInt(process.env.BRANCH_ID) || null,
-        SECRET: process.env.TERMINAL_SECRET || null
+        id: process.env.TERMINAL_ID || 1,
+        branch_id: process.env.BRANCH_ID || 1,
+        secret: process.env.TERMINAL_SECRET || ''
     };
 }
 
-async function syncTerminalStatus(terminalId) {
-    try {
-        const { data, error } = await supabase
-            .from('terminals')
-            .update({
-                last_sync: new Date().toISOString(),
-                is_active: true
-            })
-            .eq('id', terminalId)
-            .select();
-
-        if (error || !data?.[0]) {
-            log(`⚠️ Terminal ID ${terminalId} not verified.`);
-            return false;
-        }
-        return data[0];
-    } catch (err) {
-        log(`❌ Sync Error: ${err.message}`);
-        return false;
-    }
-}
-
 async function startReader() {
-    const currentConfig = getTerminalConfig();
+    const localConfig = getTerminalConfig();
 
-    if (!currentConfig.TERMINAL_ID) {
-        log('❌ خطأ: رقم الجهاز (TERMINAL_ID) مفقود. يرجى ضبطه في terminal-config.json');
-        notify('خطأ في الإعدادات', 'رقم الجهاز مفقود!', 'error');
-        process.exit(1);
+    console.log('\n==================================================');
+    console.log('🚀 NFC Reader Station - DYNAMIC VERSION v0.2.1');
+    console.log('==================================================');
+    console.log(`🖥️  Local Identifier (ID): ${localConfig.id}`);
+
+    // Verify terminal exists and fetch latest metadata from Database
+    const { data: terminal, error } = await supabase
+        .from('terminals')
+        .select(`
+            name, 
+            is_active, 
+            branch_id,
+            branches ( name )
+        `)
+        .eq('id', localConfig.id)
+        .single();
+
+    if (error || !terminal) {
+        log(`❌ Error: Terminal ${localConfig.id} not found in database.`);
+        return;
     }
 
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('🚀 NFC Reader - نظام السحب والخصم الاحترافي');
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log(`📍 رقم الجهاز (Terminal ID): ${currentConfig.TERMINAL_ID}`);
-    console.log(`🏢 رقم الفرع (Branch ID):   ${currentConfig.BRANCH_ID || 'غير محدد'}`);
-    console.log('═══════════════════════════════════════════════════════════\n');
-
-    log(`🔍 جاري التحقق من اتصال الجهاز رقم ${currentConfig.TERMINAL_ID} بالخادم...`);
-
-    const terminal = await syncTerminalStatus(currentConfig.TERMINAL_ID);
-    if (terminal) {
-        console.log(`✅ تم الاتصال بنجاح!`);
-        console.log(`🖥️  اسم الجهاز في النظام: "${terminal.name}"`);
-        console.log(`🌐 الفرع: ${terminal.branch_id || 'افتراضي'}`);
-        console.log('═══════════════════════════════════════════════════════════\n');
-
-        notify('جاهز للعمل', `الجهاز "${terminal.name}" متصل الآن بالخادم.`);
-    } else {
-        console.warn(`⚠️  تحذير: لم يتم العثور على هذا الجهاز في لوحة التحكم.`);
-        console.warn(`   تأكد من إضافة الجهاز رقم (${currentConfig.TERMINAL_ID}) في قسم الإدارة أولاً.`);
+    if (!terminal.is_active) {
+        log(`❌ Warning: Terminal "${terminal.name}" is deactivated in dashboard.`);
+        return;
     }
+
+    const branchName = terminal.branches?.name || 'Unknown Branch';
+    const activeBranchId = terminal.branch_id;
+
+    console.log(`📡 Connected as: ${terminal.name}`);
+    console.log(`📍 Assigned Branch: ${branchName} (ID: ${activeBranchId})`);
+    console.log('==================================================\n');
+
+    log(`✅ System Ready at ${branchName}`);
+    notify('Connected', `Terminal ${terminal.name} is now online.`);
+
+    // Heartbeat logic
+    setInterval(async () => {
+        const { error } = await supabase
+            .from('terminals')
+            .update({ last_sync: new Date().toISOString() })
+            .eq('id', localConfig.id);
+
+        if (error) log('⚠️ Heartbeat failed');
+    }, 60000); // Every minute
 
     const nfc = new NFC();
 
-    nfc.on('reader', (reader) => {
-        log(`🟢 تم العثور على قارئ البطاقات: ${reader.name}`);
+    nfc.on('reader', reader => {
+        log(`📟 Reader connected: ${reader.name}`);
 
-        reader.on('card', async (card) => {
-            const uid = card.uid;
-            log(`💳 تم مسح بطاقة جديدة: ${uid}`);
+        reader.on('card', async card => {
+            log(`💳 Card detected: ${card.uid}`);
 
             try {
-                const { error } = await supabase
+                // Ingest scan event
+                const { data, error } = await supabase
                     .from('scan_events')
                     .insert([{
-                        terminal_id: currentConfig.TERMINAL_ID,
-                        branch_id: currentConfig.BRANCH_ID,
-                        uid: uid,
-                        processed: false
-                    }]);
+                        terminal_id: localConfig.id,
+                        branch_id: activeBranchId,
+                        uid: card.uid
+                    }])
+                    .select();
 
                 if (error) throw error;
 
-                log('✅ تم إرسال البيانات للخادم بنجاح.');
-                notify('تم المسح', `تم قراءة البطاقة ${uid} وإرسالها.`);
-
-                // Update terminal heartbeat
-                await supabase
-                    .from('terminals')
-                    .update({ last_sync: new Date().toISOString() })
-                    .eq('id', currentConfig.TERMINAL_ID);
-
+                log('✅ Scan event sent successfully');
+                notify('Card Scanned', `Card ${card.uid} processed.`);
             } catch (err) {
-                log(`❌ فشل إرسال البيانات: ${err.message}`);
-                notify('فشل الإرسال', 'يرجى التحقق من اتصال الإنترنت.', 'error');
+                log(`❌ Error processing scan: ${err.message}`);
+                notify('Scan Error', 'Failed to process card.');
             }
         });
 
-        reader.on('error', (err) => log(`⚠️ خطأ في القارئ: ${err.message}`));
-        reader.on('end', () => log(`🔴 تم فصل القارئ: ${reader.name}`));
+        reader.on('error', err => {
+            log(`❌ Reader error: ${err.message}`);
+        });
+
+        reader.on('end', () => {
+            log(`📟 Reader disconnected: ${reader.name}`);
+        });
     });
 
-    nfc.on('error', (err) => log(`❌ خطأ في مدير NFC: ${err.message}`));
-
-    // Heartbeat loop (every 5 minutes)
-    setInterval(async () => {
-        await supabase
-            .from('terminals')
-            .update({ last_sync: new Date().toISOString() })
-            .eq('id', currentConfig.TERMINAL_ID);
-        log('💓 تم تحديث حالة الاتصال (Heartbeat).');
-    }, 5 * 60 * 1000);
+    nfc.on('error', err => {
+        log(`❌ NFC Error: ${err.message}`);
+    });
 }
 
+// Start the reader
 startReader().catch(err => {
-    log(`💥 Fatal Error: ${err.message}`);
-    notify('Fatal Error', 'NFC Service stopped unexpectedly.', 'error');
+    log(`💥 Fatal error: ${err.message}`);
+    process.exit(1);
 });

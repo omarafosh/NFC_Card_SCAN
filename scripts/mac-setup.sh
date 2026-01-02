@@ -22,7 +22,7 @@ npm install
 
 # 4. Build the standalone app
 echo "🔨 Building standalone Mac app..."
-npm run build:reader:mac
+npm run build:mac
 
 echo ""
 echo "✅ Done! You can now find the app 'nfc-reader-mac' in this folder."

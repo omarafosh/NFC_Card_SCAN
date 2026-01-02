@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS public.terminals (
     connection_url TEXT NOT NULL,
     terminal_secret TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     is_active BOOLEAN DEFAULT TRUE,
-    last_seen TIMESTAMPTZ,
+    last_sync TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
     phone TEXT,
     email TEXT,
     points_balance INT DEFAULT 0,
+    balance DECIMAL(10,2) DEFAULT 0.00,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

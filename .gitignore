@@ -42,3 +42,7 @@ yarn-error.log*
 
 # NFC Reader Config
 .terminal-config.json
+terminal-config.json
+*.exe
+dist-reader/
+*.log

@@ -80,13 +80,35 @@ export async function POST(request) {
 
     try {
         const body = await request.json();
-        const { customer_id, card_id, discount_id, amount } = body;
+        const {
+            customer_id,
+            card_id,
+            discount_id,
+            amount,
+            manual_discount = 0,
+            manual_discount_type = 'percentage',
+            payment_method = 'CASH',
+            is_topup = false
+        } = body;
+
+        // --- NEW: Wallet Top-up Handler ---
+        if (is_topup) {
+            const { topUp } = await import('@/lib/wallet');
+            const newBalance = await topUp(customer_id, amount, session.id);
+            const { data: updatedCust } = await supabase.from('customers').select('*').eq('id', customer_id).single();
+            return successResponse({
+                status: 'success',
+                message: 'Wallet recharged successfully',
+                new_balance: newBalance,
+                updated_customer: updatedCust
+            }, 201);
+        }
 
         let amount_after = parseFloat(amount) || 0;
         let discount = null;
         let points_to_deduct = 0;
 
-        // 1. Validate & Apply Discount
+        // 1. Validate & Apply Loyalty Discount (Reward)
         if (discount_id) {
             const { data: discountData, error: discountErr } = await supabase
                 .from('discounts')
@@ -115,13 +137,33 @@ export async function POST(request) {
                     points_to_deduct = discount.points_required;
                 }
 
-                // Calculate Discount
+                // Calculate Loyalty Discount
                 if (discount.type === 'percentage') {
                     amount_after = amount_after - (amount_after * (discount.value / 100));
                 } else if (discount.type === 'fixed_amount') {
                     amount_after = amount_after - discount.value;
                 }
-                if (amount_after < 0) amount_after = 0;
+            }
+        }
+
+        // 2. Apply Manual Discount (Expert Rule: Applied after loyalty)
+        const manVal = parseFloat(manual_discount) || 0;
+        if (manVal > 0) {
+            if (manual_discount_type === 'percentage') {
+                amount_after = amount_after - (amount_after * (manVal / 100));
+            } else {
+                amount_after = amount_after - manVal;
+            }
+        }
+
+        if (amount_after < 0) amount_after = 0;
+
+        // --- NEW: Wallet Payment Handler ---
+        if (payment_method === 'WALLET') {
+            const { getBalance } = await import('@/lib/wallet');
+            const balance = await getBalance(customer_id);
+            if (balance < amount_after) {
+                return NextResponse.json({ message: 'Insufficient wallet balance' }, { status: 400 });
             }
         }
 
@@ -140,6 +182,7 @@ export async function POST(request) {
                     amount_before: amount,
                     amount_after,
                     points_earned,
+                    payment_method,
                     status: 'success'
                 }
             ])
@@ -148,6 +191,12 @@ export async function POST(request) {
 
         if (transError) throw transError;
         const transaction_id = transaction.id;
+
+        // --- NEW: Wallet Deduction ---
+        if (payment_method === 'WALLET') {
+            const { payWithWallet } = await import('@/lib/wallet');
+            await payWithWallet(customer_id, amount_after, transaction_id, session.id);
+        }
 
         // 4. Log Points
         // A. Deduction (Redemption)
@@ -172,11 +221,19 @@ export async function POST(request) {
             });
         }
 
+        // 5. Get Updated Customer Data
+        const { data: updatedCustomer, error: updateCustErr } = await supabase
+            .from('customers')
+            .select('points_balance, balance')
+            .eq('id', customer_id)
+            .single();
+
         return successResponse({
             status: 'success',
             transaction_id,
             points_earned,
-            amount_after
+            amount_after,
+            updated_customer: updatedCustomer || null
         }, 201);
 
     } catch (error) {

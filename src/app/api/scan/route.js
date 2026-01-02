@@ -68,8 +68,7 @@ export async function POST(request) {
         let discountQuery = supabase
             .from('discounts')
             .select('*')
-            .eq('is_active', true)
-            .lte('points_required', customer.points_balance || 0);
+            .eq('is_active', true);
 
         // Filter by date (Complex filters might need raw SQL or careful chaining)
         const { data: discounts, error: discError } = await discountQuery
@@ -85,11 +84,26 @@ export async function POST(request) {
             return startOk && endOk;
         });
 
+        // 4. Fetch Recent Transactions for the customer
+        const { data: recentTransactions, error: txError } = await supabase
+            .from('transactions')
+            .select(`
+                id,
+                amount_after,
+                points_earned,
+                created_at,
+                discounts ( name )
+            `)
+            .eq('customer_id', customer.id)
+            .order('created_at', { ascending: false })
+            .limit(3);
+
         return NextResponse.json({
             status: 'success',
             customer,
             card,
-            availableRewards
+            availableRewards,
+            recentTransactions: recentTransactions || []
         });
 
     } catch (error) {

@@ -1,0 +1,17 @@
+{
+    "name": "nfc-reader-scripts",
+    "version": "1.0.0",
+    "description": "Native dependencies for NFC Reader hardware",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "nfc-pcsc": "^0.8.1",
+        "node-notifier": "^10.0.1",
+        "dotenv": "^17.2.3",
+        "@supabase/supabase-js": "^2.89.0",
+        "ws": "^8.18.3"
+    },
+    "devDependencies": {
+        "pkg": "^5.8.1"
+    }
+}

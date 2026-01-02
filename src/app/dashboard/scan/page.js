@@ -20,6 +20,7 @@ export default function ScanPage() {
     const [terminals, setTerminals] = useState([]);
     const [selectedBranch, setSelectedBranch] = useState('');
     const [selectedTerminal, setSelectedTerminal] = useState('');
+    const [retryKey, setRetryKey] = useState(0);
 
     const router = useRouter();
     const isMounted = useRef(true);
@@ -82,10 +83,6 @@ export default function ScanPage() {
             )
             .subscribe((status, err) => {
                 console.log(`[Realtime] Subscription status for Terminal ${selectedTerminal}:`, status);
-                if (err) {
-                    console.error(`[Realtime] Subscription Error:`, err);
-                    toast.error(`Realtime Connection Error: ${err.message || 'Unknown code'}`);
-                }
 
                 if (status === 'SUBSCRIBED') {
                     setStatus('connected');
@@ -93,6 +90,10 @@ export default function ScanPage() {
                 } else if (status === 'CLOSED') {
                     setStatus('disconnected');
                     console.log('[Realtime] Subscription closed.');
+                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    setStatus('error');
+                    console.error(`[Realtime] Subscription Error (${status}):`, err);
+                    // No automatic retry here to avoid loops, but we show an error UI
                 } else {
                     setStatus('disconnected');
                     console.warn(`[Realtime] Unexpected status: ${status}`);
@@ -104,7 +105,7 @@ export default function ScanPage() {
             isMounted.current = false;
             supabase.removeChannel(channel);
         };
-    }, [selectedTerminal]);
+    }, [selectedTerminal, retryKey]);
 
     const handleTerminalSelect = (terminalId) => {
         const terminal = terminals.find(t => t.id.toString() === terminalId);
@@ -192,10 +193,20 @@ export default function ScanPage() {
                     </button>
                     <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${status === 'connected' || status === 'processing'
                         ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                        : status === 'error'
+                            ? 'bg-red-500 text-white'
+                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                         }`}>
                         {status === 'connected' || status === 'processing' ? <Zap size={18} className="fill-current" /> : <WifiOff size={18} />}
-                        {status === 'connected' || status === 'processing' ? t('connected') : t('disconnected')}
+                        {status === 'connected' || status === 'processing' ? t('connected') : status === 'error' ? 'Connection Error' : t('disconnected')}
+                        {status === 'error' && (
+                            <button
+                                onClick={() => setRetryKey(k => k + 1)}
+                                className="ms-2 underline text-[10px] font-bold"
+                            >
+                                Reconnect
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>

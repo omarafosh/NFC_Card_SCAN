@@ -349,13 +349,18 @@ function TerminalManagement() {
         },
         {
             header: t('status'),
-            accessor: 'is_active',
-            cell: (row) => (
-                <div className="flex items-center gap-2 text-[10px] text-green-500 font-bold uppercase tracking-wider">
-                    <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse"></div>
-                    Online
-                </div>
-            )
+            accessor: 'last_sync',
+            cell: (row) => {
+                const lastSync = row.last_sync ? new Date(row.last_sync) : null;
+                const isOnline = lastSync && (new Date() - lastSync) < 10 * 60 * 1000; // 10 minutes
+
+                return (
+                    <div className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider ${isOnline ? 'text-green-500' : 'text-gray-400'}`}>
+                        <div className={`h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                        {isOnline ? 'Online' : 'Offline'}
+                    </div>
+                );
+            }
         },
         {
             header: t('actions'),

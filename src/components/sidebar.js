@@ -78,6 +78,12 @@ export default function Sidebar({ user }) {
           <LogOut size={20} />
           <span className="font-medium">{t('logout')}</span>
         </button>
+
+        <div className="pt-2 flex justify-center">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-black/20 px-2 py-0.5 rounded border border-slate-800">
+            Version 0.2.0
+          </span>
+        </div>
       </div>
     </aside>
   );

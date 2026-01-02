@@ -60,7 +60,7 @@ export default function ScanPage() {
     useEffect(() => {
         if (!selectedTerminal) return;
 
-        console.log(`Subscribing to realtime events for Terminal: ${selectedTerminal}`);
+        console.log(`[Realtime] Attempting to subscribe for Terminal: ${selectedTerminal}`);
         isMounted.current = true;
 
         const channel = supabase
@@ -74,21 +74,33 @@ export default function ScanPage() {
                     filter: `terminal_id=eq.${selectedTerminal}`
                 },
                 (payload) => {
-                    console.log('Realtime scan detected:', payload);
-                    if (payload.new && payload.new.uid) {
+                    console.log('[Realtime] Scan event detected:', payload);
+                    if (payload.new && payload.new.uid && isMounted.current) {
                         processScan(payload.new.uid);
                     }
                 }
             )
-            .subscribe((status) => {
+            .subscribe((status, err) => {
+                console.log(`[Realtime] Subscription status for Terminal ${selectedTerminal}:`, status);
+                if (err) {
+                    console.error(`[Realtime] Subscription Error:`, err);
+                    toast.error(`Realtime Connection Error: ${err.message || 'Unknown code'}`);
+                }
+
                 if (status === 'SUBSCRIBED') {
                     setStatus('connected');
+                    console.log('[Realtime] Successfully subscribed to changes.');
+                } else if (status === 'CLOSED') {
+                    setStatus('disconnected');
+                    console.log('[Realtime] Subscription closed.');
                 } else {
                     setStatus('disconnected');
+                    console.warn(`[Realtime] Unexpected status: ${status}`);
                 }
             });
 
         return () => {
+            console.log(`[Realtime] Cleaning up subscription for Terminal ${selectedTerminal}`);
             isMounted.current = false;
             supabase.removeChannel(channel);
         };
@@ -97,6 +109,7 @@ export default function ScanPage() {
     const handleTerminalSelect = (terminalId) => {
         const terminal = terminals.find(t => t.id.toString() === terminalId);
         if (terminal) {
+            console.log(`[UI] Selecting terminal: ${terminalId}`);
             setSelectedTerminal(terminalId);
             localStorage.setItem('selected_terminal', terminalId);
             localStorage.setItem('selected_branch', selectedBranch);

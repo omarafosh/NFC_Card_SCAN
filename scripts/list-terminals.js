@@ -14,12 +14,14 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function listTerminals() {
-    console.log('📋 Existing Terminals & Secrets:\n');
-    console.log('--------------------------------------------------');
+    console.log('\n📋 Existing Terminals & Secrets:\n');
+    console.log('--------------------------------------------------------------------------------');
+    console.log(String('ID').padEnd(5) + ' | ' + String('Name').padEnd(25) + ' | ' + String('Status').padEnd(10) + ' | ' + 'Last Seen');
+    console.log('--------------------------------------------------------------------------------');
 
     const { data, error } = await supabase
         .from('terminals')
-        .select('id, name, terminal_secret');
+        .select('id, name, terminal_secret, last_sync');
 
     if (error) {
         console.error('❌ Error fetching terminals:', error.message);
@@ -27,14 +29,26 @@ async function listTerminals() {
     }
 
     if (!data || data.length === 0) {
-        console.log('⚠️  No terminals found. Did you run the seed script?');
+        console.log('⚠️  No terminals found.');
     } else {
         data.forEach(t => {
-            console.log(`ID: ${t.id} | Name: ${t.name}`);
-            console.log(`SECRET: ${t.terminal_secret}`);
-            console.log('--------------------------------------------------');
+            const lastSync = t.last_sync ? new Date(t.last_sync) : null;
+            const now = new Date();
+            const isOnline = lastSync && (now - lastSync) < 10 * 60 * 1000; // 10 minutes threshold
+
+            const status = isOnline ? '🟢 ONLINE' : '⚪ OFFLINE';
+            const lastSeenStr = lastSync ? lastSync.toLocaleString() : 'Never';
+
+            console.log(
+                String(t.id).padEnd(5) + ' | ' +
+                String(t.name).padEnd(25) + ' | ' +
+                String(status).padEnd(10) + ' | ' +
+                lastSeenStr
+            );
+            console.log(`   SECRET: ${t.terminal_secret}`);
+            console.log('--------------------------------------------------------------------------------');
         });
-        console.log('\n💡 Copy the ID and SECRET above and update your .env file.');
+        console.log('\n💡 Tip: To connect a specific machine, set TERMINAL_ID in your config to match the ID above.');
     }
 }
 

@@ -2,8 +2,10 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Save, Settings as SettingsIcon, Coins, DollarSign } from 'lucide-react';
+import { useSettings } from '@/lib/SettingsContext';
 
 export default function SettingsClient() {
+    const { updateSettingsState } = useSettings();
     const [loading, setLoading] = useState(true);
     const [settings, setSettings] = useState({
         currency_symbol: 'SAR',
@@ -41,6 +43,8 @@ export default function SettingsClient() {
             });
             if (res.ok) {
                 toast.success('Settings saved successfully');
+                // Update global context immediately
+                updateSettingsState(settings);
             } else {
                 toast.error('Failed to save settings');
             }

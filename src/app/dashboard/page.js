@@ -130,7 +130,7 @@ export default function Dashboard() {
                             <p className="text-sm text-gray-500 text-center py-4">{t('no_data')}</p>
                         )}
 
-                        {data.recentActivity.length > 0 && (
+                        {data.recentActivity?.length > 0 && (
                             <button className="w-full mt-4 text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center justify-center gap-1 transition-colors">
                                 {t('nav_transactions')} <ArrowRight className="w-3 h-3" />
                             </button>

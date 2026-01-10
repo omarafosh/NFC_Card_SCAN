@@ -90,31 +90,14 @@ export default function CustomerDetailsPage({ params }) {
                     </div>
                 </div>
 
-                {/* Points Card */}
-                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-xl p-6 min-w-[250px] border border-indigo-100 dark:border-indigo-900/50">
-                    <div className="text-sm font-semibold text-indigo-900 dark:text-indigo-300 uppercase tracking-wider mb-1">Points Balance</div>
-
-                    {editingPoints ? (
-                        <div className="flex items-center gap-2 mt-2">
-                            <input
-                                type="number"
-                                value={newPoints}
-                                onChange={(e) => setNewPoints(e.target.value)}
-                                className="w-24 px-2 py-1 rounded border border-indigo-300 text-lg font-bold"
-                            />
-                            <button onClick={handleUpdatePoints} className="p-2 bg-green-600 text-white rounded hover:bg-green-700"><Save size={16} /></button>
-                            <button onClick={() => setEditingPoints(false)} className="p-2 bg-gray-400 text-white rounded hover:bg-gray-500"><X size={16} /></button>
+                {/* Wallet Card */}
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-6 min-w-[250px] border border-emerald-100 dark:border-emerald-900/50">
+                    <div className="text-sm font-semibold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider mb-1">Wallet Balance</div>
+                    <div className="flex items-center gap-2">
+                        <div className="text-4xl font-black text-emerald-600 dark:text-emerald-400">
+                            ${parseFloat(customer.balance || 0).toFixed(2)}
                         </div>
-                    ) : (
-                        <div className="flex items-center gap-2">
-                            <div className="text-4xl font-bold text-indigo-600 dark:text-indigo-400">
-                                {customer.points_balance}
-                            </div>
-                            <button onClick={() => setEditingPoints(true)} className="text-indigo-400 hover:text-indigo-600 p-1 rounded-full hover:bg-indigo-100 transition">
-                                <Edit2 size={16} />
-                            </button>
-                        </div>
-                    )}
+                    </div>
                 </div>
             </div>
 
@@ -131,24 +114,18 @@ export default function CustomerDetailsPage({ params }) {
                                 <tr>
                                     <th className="px-6 py-4">Date</th>
                                     <th className="px-6 py-4">Amount</th>
-                                    <th className="px-6 py-4">Points</th>
                                     <th className="px-6 py-4">Discount</th>
                                     <th className="px-6 py-4">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                                 {transactions.length === 0 ? (
-                                    <tr><td colSpan="5" className="px-6 py-8 text-center">No transactions found</td></tr>
+                                    <tr><td colSpan="4" className="px-6 py-8 text-center">No transactions found</td></tr>
                                 ) : (
                                     transactions.map((tx) => (
                                         <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
                                             <td className="px-6 py-4 whitespace-nowrap">{new Date(tx.created_at).toLocaleDateString()} {new Date(tx.created_at).toLocaleTimeString()}</td>
-                                            <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">${tx.amount_after}</td>
-                                            <td className="px-6 py-4">
-                                                {tx.points_earned > 0 ? (
-                                                    <span className="text-green-600 flex items-center gap-1">+{tx.points_earned}</span>
-                                                ) : <span className="text-gray-400">-</span>}
-                                            </td>
+                                            <td className="px-6 py-4 font-black text-gray-900 dark:text-white">${tx.amount_after}</td>
                                             <td className="px-6 py-4">
                                                 {tx.discount_name ? (
                                                     <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{tx.discount_name}</span>

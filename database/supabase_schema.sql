@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     id SERIAL PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    role TEXT DEFAULT 'staff' CHECK (role IN ('admin', 'staff')),
+    role TEXT DEFAULT 'staff' CHECK (role IN ('superadmin', 'admin', 'staff')),
     branch_id INT REFERENCES public.branches(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -124,8 +124,12 @@ CREATE TABLE IF NOT EXISTS public.settings (
 CREATE TABLE IF NOT EXISTS public.audit_logs (
     id SERIAL PRIMARY KEY,
     admin_id INT REFERENCES public.users(id) ON DELETE SET NULL,
+    admin_username TEXT,
     action_type TEXT NOT NULL,
-    details TEXT,
+    entity_name TEXT,
+    entity_id TEXT,
+    details JSONB DEFAULT '{}'::jsonb,
+    ip_address TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -152,4 +156,49 @@ ALTER TABLE public.scan_events ENABLE ROW LEVEL SECURITY;
 -- Allow authenticated and anon users to read scan events (needed for realtime subscription)
 CREATE POLICY "Allow read for scan events" ON public.scan_events FOR SELECT USING (true);
 
+-- Allow authenticated users to mark scan events as processed
+CREATE POLICY "Allow update for scan events" ON public.scan_events FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+-- Storage Setup (Run manualy in Supabase SQL Editor if not exists)
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true);
+-- CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING ( bucket_id = 'avatars' );
+-- CREATE POLICY "Public Upload" ON storage.objects FOR INSERT WITH CHECK ( bucket_id = 'avatars' );
+
 COMMIT;
+
+-- ==========================================
+-- PHASE 11: Comprehensive RLS Enforcement
+-- ==========================================
+
+-- 1. Users Table
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Superadmins have full access to users" ON public.users FOR ALL TO authenticated USING (auth.jwt() ->> 'role' = 'superadmin');
+CREATE POLICY "Users can view their own data" ON public.users FOR SELECT TO authenticated USING (username = (auth.jwt() ->> 'username'));
+
+-- 2. Branches Table
+ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "All authenticated users can view branches" ON public.branches FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Superadmins can manage branches" ON public.branches FOR ALL TO authenticated USING (auth.jwt() ->> 'role' = 'superadmin');
+
+-- 3. Customers Table
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Authenticated users can manage customers" ON public.customers FOR ALL TO authenticated USING (true);
+
+-- 4. Transactions Table
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Authenticated users can view transactions" ON public.transactions FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can create transactions" ON public.transactions FOR INSERT TO authenticated WITH CHECK (true);
+
+-- 5. Settings Table
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "All authenticated users can view settings" ON public.settings FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Superadmins can update settings" ON public.settings FOR UPDATE TO authenticated USING (auth.jwt() ->> 'role' = 'superadmin');
+
+-- 6. Audit Logs Table
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Superadmins can view and manage audit logs" ON public.audit_logs FOR ALL TO authenticated USING (auth.jwt() ->> 'role' = 'superadmin');
+CREATE POLICY "Admins can view audit logs" ON public.audit_logs FOR SELECT TO authenticated USING (auth.jwt() ->> 'role' = 'admin');
+
+-- 7. Rule Engine / Campaigns (If applicable in future)
+-- ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
+-- ...

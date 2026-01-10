@@ -4,7 +4,9 @@ import DiscountsClient from './client';
 
 export default async function DiscountsPage() {
     const session = await getSession();
-    if (!session || session.role !== 'admin') {
+    const allowedRoles = ['admin', 'superadmin'];
+
+    if (!session || !allowedRoles.includes(session.role)) {
         redirect('/dashboard');
     }
 

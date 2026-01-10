@@ -8,6 +8,7 @@ import { loginSchema } from '@/lib/schemas';
 import { AUTH, ERROR_CODES, ENV } from '@/lib/constants';
 import { handleApiError } from '@/lib/errorHandler';
 import { authLogger } from '@/lib/logger';
+import { logAudit } from '@/lib/audit';
 
 export async function POST(request) {
     try {
@@ -117,6 +118,14 @@ export async function POST(request) {
         });
 
         authLogger.info('Successful login', { userId: user.id, username: user.username, role: user.role });
+
+        await logAudit({
+            action: 'LOGIN',
+            entity: 'auth',
+            entityId: user.id,
+            details: { role: user.role },
+            req: request
+        });
 
         return NextResponse.json({ user: { id: user.id, username: user.username, role: user.role } });
 

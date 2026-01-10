@@ -5,10 +5,12 @@ import { Plus, Trash2, Edit, CreditCard, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLanguage } from '@/lib/LanguageContext';
 import DataTable from '@/components/DataTable';
+import SearchableSelect from '@/components/SearchableSelect';
 
 export default function CustomersPage() {
+    const { t } = useLanguage();
     return (
-        <Suspense fallback={<div className="flex items-center justify-center p-20 font-bold opacity-50">Loading...</div>}>
+        <Suspense fallback={<div className="flex items-center justify-center p-20 font-bold opacity-50">{t('loading')}</div>}>
             <CustomersContent />
         </Suspense>
     );
@@ -22,13 +24,25 @@ function CustomersContent() {
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [formData, setFormData] = useState({ id: null, full_name: '', phone: '', email: '', uid: '' });
+    const [availableCards, setAvailableCards] = useState([]);
+    const [showDeleted, setShowDeleted] = useState(false);
 
     const searchParams = useSearchParams();
     const uidFromUrl = searchParams.get('uid');
 
     useEffect(() => {
         setMounted(true);
+        // Fetch cards for the dropdown
+        fetch('/api/cards')
+            .then(res => res.json())
+            .then(data => setAvailableCards(data.data || []))
+            .catch(err => console.error('Failed to load cards', err));
     }, []);
+
+    // Helper to find card for specific customer
+    const getCustomerCard = (customerId) => {
+        return availableCards.find(c => c.customer_id === customerId)?.uid || '';
+    }
 
     useEffect(() => {
         if (uidFromUrl && mounted) {
@@ -40,7 +54,7 @@ function CustomersContent() {
     const fetchCustomers = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/customers?search=${encodeURIComponent(search)}`);
+            const res = await fetch(`/api/customers?search=${encodeURIComponent(search)}&deleted=${showDeleted}`);
             const data = await res.json();
             setCustomers(data.data || []);
         } catch (e) {
@@ -53,7 +67,7 @@ function CustomersContent() {
     useEffect(() => {
         const timeout = setTimeout(fetchCustomers, 300);
         return () => clearTimeout(timeout);
-    }, [search]);
+    }, [search, showDeleted]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -91,20 +105,63 @@ function CustomersContent() {
         }
     };
 
+    const handleRestore = async (id) => {
+        try {
+            const res = await fetch('/api/customers', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, restore: true })
+            });
+            if (res.ok) {
+                toast.success(t('restore_success'));
+                fetchCustomers();
+            }
+        } catch (e) {
+            toast.error(t('restore_error'));
+        }
+    };
+
+    const handlePermanentDelete = async (id) => {
+        if (!confirm(t('confirm_permanent_delete') || 'Are you sure you want to delete this permanently?')) return;
+        try {
+            const res = await fetch(`/api/customers/${id}?permanent=true`, { method: 'DELETE' });
+            if (res.ok) {
+                toast.success(t('delete_success'));
+                fetchCustomers();
+            } else {
+                toast.error(t('delete_error'));
+            }
+        } catch (e) {
+            toast.error(t('network_error'));
+        }
+    };
+
     const columns = [
         {
             header: t('customer_name'),
             accessor: 'full_name',
             className: 'font-bold text-gray-900 dark:text-white'
         },
-        { header: t('customer_phone'), accessor: 'phone' },
-        { header: t('customer_email'), accessor: 'email' },
         {
-            header: t('customer_points'),
-            accessor: 'points_balance',
+            header: t('card_uid'),
+            accessor: 'card_uid',
             cell: (row) => (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                    {row.points_balance}
+                row.card_uid ? (
+                    <span className="font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded border dark:border-gray-600">
+                        {row.card_uid}
+                    </span>
+                ) : (
+                    <span className="text-gray-400 text-xs">-</span>
+                )
+            )
+        },
+        { header: t('customer_phone'), accessor: 'phone' },
+        {
+            header: t('customer_wallet'),
+            accessor: 'balance',
+            cell: (row) => (
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    {parseFloat(row.balance || 0).toFixed(2)}
                 </span>
             )
         },
@@ -113,27 +170,47 @@ function CustomersContent() {
             className: 'w-24',
             cell: (row) => (
                 <div className={`flex gap-1`}>
-                    <button
-                        onClick={() => {
-                            setFormData({
-                                id: row.id,
-                                full_name: row.full_name,
-                                phone: row.phone || '',
-                                email: row.email || '',
-                                uid: '' // Card UID is usually not editable this way
-                            });
-                            setShowModal(true);
-                        }}
-                        className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                    >
-                        <Edit size={16} />
-                    </button>
-                    <button
-                        onClick={() => handleDelete(row.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                        <Trash2 size={16} />
-                    </button>
+                    {!showDeleted ? (
+                        <>
+                            <button
+                                onClick={() => {
+                                    setFormData({
+                                        id: row.id,
+                                        full_name: row.full_name,
+                                        phone: row.phone || '',
+                                        email: row.email || '',
+                                        uid: getCustomerCard(row.id)
+                                    });
+                                    setShowModal(true);
+                                }}
+                                className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            >
+                                <Edit size={16} />
+                            </button>
+                            <button
+                                onClick={() => handleDelete(row.id)}
+                                className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <button
+                                onClick={() => handleRestore(row.id)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg text-xs font-bold transition-all"
+                            >
+                                {t('restore')}
+                            </button>
+                            <button
+                                onClick={() => handlePermanentDelete(row.id)}
+                                className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-all"
+                                title={t('delete_permanent') || 'Delete Forever'}
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        </>
+                    )}
                 </div>
             )
         }
@@ -144,17 +221,28 @@ function CustomersContent() {
     return (
         <div className="space-y-6" suppressHydrationWarning>
             <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-4`}>
-                <button
-                    onClick={() => setShowModal(true)}
-                    className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
-                >
-                    <UserPlus size={20} />
-                    {t('register_customer')}
-                </button>
+                <div className="flex gap-2 w-full md:w-auto">
+                    <button
+                        onClick={() => setShowModal(true)}
+                        className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
+                    >
+                        <UserPlus size={20} />
+                        {t('register_customer')}
+                    </button>
+                    <button
+                        onClick={() => setShowDeleted(!showDeleted)}
+                        className={`px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${showDeleted
+                            ? 'bg-red-100 text-red-600 ring-2 ring-red-200'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            }`}
+                    >
+                        <Trash2 size={18} />
+                        <span className="hidden sm:inline">{showDeleted ? t('hide_deleted') : t('show_deleted')}</span>
+                    </button>
+                </div>
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
-                        {t('nav_customers')}
-                        <span className="text-sm font-normal text-gray-400 mt-1">Registry</span>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-white flex items-center justify-end gap-3">
+                        {showDeleted ? t('recycle_bin') : t('nav_customers')}
                     </h1>
                 </div>
             </div>
@@ -174,7 +262,7 @@ function CustomersContent() {
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md animate-in fade-in zoom-in duration-200">
                         <div className="flex items-center gap-2 mb-2 text-blue-600">
                             <UserPlus size={18} />
-                            <span className="text-xs font-bold uppercase tracking-widest">New Member</span>
+                            <span className="text-xs font-bold uppercase tracking-widest">{t('new_member_badge') || 'New Member'}</span>
                         </div>
                         <h2 className={`text-2xl font-bold mb-6 dark:text-white text-start`}>
                             {formData.id ? t('edit') : t('register_customer')}
@@ -219,14 +307,18 @@ function CustomersContent() {
                                     <CreditCard size={14} className="text-blue-500" />
                                     {t('card_uid')}
                                 </label>
-                                <input
-                                    type="text"
-                                    className={`w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-mono transition-all ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
+                                <SearchableSelect
+                                    options={availableCards
+                                        .filter(c => !c.customer_id || (formData.id && c.customer_id === formData.id))
+                                        .map(c => ({
+                                            value: c.uid,
+                                            label: `${c.uid} ${c.customer_id ? `(${t('card_status_current')})` : `(${t('card_status_available')})`}`
+                                        }))}
                                     value={formData.uid}
-                                    onChange={(e) => setFormData({ ...formData, uid: e.target.value })}
-                                    placeholder="e.g. AB:CD:12:34"
+                                    onChange={(val) => setFormData({ ...formData, uid: val })}
+                                    placeholder={t('search') || "Search..."}
                                 />
-                                {uidFromUrl && <p className={`text-[10px] text-blue-500 mt-2 font-bold ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>Auto-filled from scan</p>}
+                                {uidFromUrl && <p className={`text-[10px] text-blue-500 mt-2 font-bold ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('autofilled_msg') || 'Auto-filled from scan'}</p>}
                             </div>
                             <div className="flex gap-4 pt-4">
                                 <button

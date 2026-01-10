@@ -1,23 +1,38 @@
-import { supabase } from './supabase';
+import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
 /**
- * Logs an administrative action to the database.
- * @param {number} adminId - The ID of the user performing the action.
- * @param {string} actionType - A short string code for the action (e.g., 'UPDATE_SETTINGS').
- * @param {string|object} details - Additional details (will be JSON stringified if object).
+ * Logs an action to the audit_logs table.
+ * @param {Object} params
+ * @param {string} params.action - CREATE, UPDATE, DELETE, RESTORE, etc.
+ * @param {string} params.entity - Table name (campaigns, cards, etc.)
+ * @param {string} params.entityId - ID of the affected record
+ * @param {Object} params.details - JSON object with details (diff, snapshots)
  */
-export async function logAudit(adminId, actionType, details) {
+export async function logAudit({ action, entity, entityId, details, req }) {
     try {
-        const detailsString = typeof details === 'object' ? JSON.stringify(details) : details;
-        const { error } = await supabase
-            .from('audit_logs')
-            .insert([
-                { admin_id: adminId, action_type: actionType, details: detailsString }
-            ]);
+        const session = await getSession();
+        let ip = 'unknown';
 
-        if (error) throw error;
-    } catch (e) {
-        console.error('Failed to write audit log:', e);
-        // Do not throw, so we don't block the main action if logging fails
+        // Try to get IP from request headers if provided
+        if (req) {
+            ip = req.headers.get('x-forwarded-for') || 'unknown';
+        }
+
+        const { error } = await supabase.from('audit_logs').insert([{
+            admin_id: session?.id || null,
+            admin_username: session?.username || 'system',
+            action_type: action,
+            entity_name: entity,
+            entity_id: entityId?.toString(),
+            details: details || {},
+            ip_address: ip
+        }]);
+
+        if (error) {
+            console.error('FAILED TO LOG AUDIT:', error);
+        }
+    } catch (err) {
+        console.error('AUDIT LOG EXCEPTION:', err);
     }
 }

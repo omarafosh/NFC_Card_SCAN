@@ -16,7 +16,10 @@ export async function GET() {
 
 export async function POST(request) {
     const session = await getSession();
-    if (!session || session.role !== 'admin') {
+    const isSuperAdmin = session?.role === 'superadmin';
+    const isAdmin = session?.role === 'admin';
+
+    if (!session || (!isAdmin && !isSuperAdmin)) {
         return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -37,7 +40,12 @@ export async function POST(request) {
         if (error) throw error;
 
         // Audit Log
-        await logAudit(session.id, 'UPDATE_SETTINGS', body);
+        await logAudit({
+            action: 'UPDATE_SETTINGS',
+            entity: 'settings',
+            details: body,
+            req: request
+        });
 
         // Clear Settings Cache
         cache.delete(CacheKeys.SETTINGS);

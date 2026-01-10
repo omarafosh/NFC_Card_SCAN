@@ -36,7 +36,7 @@ export default function TransactionsPage() {
 
     const handleExportCSV = () => {
         if (transactions.length === 0) {
-            toast.error('No data to export');
+            toast.error(t('no_data'));
             return;
         }
 
@@ -66,7 +66,7 @@ export default function TransactionsPage() {
         link.click();
         document.body.removeChild(link);
 
-        toast.success('Exported successfully!');
+        toast.success(t('export_success') || 'Exported successfully!');
     };
 
     const handleClearLogs = async () => {
@@ -113,18 +113,22 @@ export default function TransactionsPage() {
         {
             header: t('customer_points'),
             accessor: 'points_earned',
-            cell: (row) => (
-                <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
-                    +{row.points_earned}
-                </span>
-            )
+            cell: (row) => {
+                // Display package count if available, otherwise show points
+                const displayValue = row.coupon_count || row.points_earned || 0;
+                return (
+                    <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
+                        {displayValue > 0 ? '+' : ''}{displayValue}
+                    </span>
+                );
+            }
         },
         {
             header: t('status'),
             accessor: 'status',
             cell: (row) => (
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${row.status === 'success' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                    {row.status === 'success' ? 'SUCCESS' : 'FAILED'}
+                    {row.status === 'success' ? t('status_success') : t('status_failed')}
                 </span>
             )
         },
@@ -150,7 +154,6 @@ export default function TransactionsPage() {
                 <div>
                     <h1 className="text-3xl font-bold text-gray-800 dark:text-white flex items-center gap-3 text-start">
                         {t('nav_transactions')}
-                        <span className="text-sm font-normal text-gray-400 mt-1">Audit Trail</span>
                     </h1>
                 </div>
             </div>

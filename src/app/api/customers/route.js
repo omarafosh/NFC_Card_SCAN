@@ -5,6 +5,8 @@ import { customerSchema } from '@/lib/schemas';
 import { rateLimitMiddleware, RATE_LIMITS } from '@/lib/rateLimit';
 import { handleApiError, validationError, successResponse, createdResponse } from '@/lib/errorHandler';
 import { apiLogger } from '@/lib/logger';
+import { logAudit } from '@/lib/audit';
+import { enforceMaintenance } from '@/lib/maintenance';
 
 export async function GET(request) {
     try {
@@ -29,8 +31,23 @@ export async function GET(request) {
 
         const url = new URL(request.url);
         const search = url.searchParams.get('search') || '';
+        const showDeleted = url.searchParams.get('deleted') === 'true';
 
-        let query = supabase.from('customers').select('*');
+        let query = supabase
+            .from('customers')
+            .select(`
+                *,
+                cards (
+                    uid,
+                    is_active
+                )
+            `);
+
+        if (showDeleted) {
+            query = query.not('deleted_at', 'is', null);
+        } else {
+            query = query.is('deleted_at', null);
+        }
 
         if (search) {
             query = query.or(`full_name.ilike.%${search}%,phone.ilike.%${search}%`);
@@ -40,9 +57,18 @@ export async function GET(request) {
 
         if (error) throw error;
 
-        apiLogger.info('Customers retrieved', { count: data.length, search });
+        // Map cards to single UID string for simpler frontend usage
+        // Note: Relation is One-to-Many but usually we handle one active card per customer for display
+        const rows = data.map(c => ({
+            ...c,
+            // If cards array exists and has length, pick the first (or active) one
+            card_uid: c.cards?.length > 0 ? c.cards[0].uid : null,
+            has_card: c.cards?.length > 0
+        }));
 
-        return successResponse(data, 200, null);
+        apiLogger.info('Customers retrieved', { count: rows.length, search });
+
+        return successResponse(rows, 200, null);
 
     } catch (error) {
         return handleApiError(error, 'GET /api/customers');
@@ -53,6 +79,10 @@ export async function POST(request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+
+        // Enforce Maintenance Mode
+        const maintenance = await enforceMaintenance(session);
+        if (maintenance) return maintenance;
 
         // Apply rate limiting
         const rateLimit = await rateLimitMiddleware(RATE_LIMITS.API)(request, '/api/customers');
@@ -90,30 +120,45 @@ export async function POST(request) {
         if (custError) throw custError;
         const customerId = customer.id;
 
-        // 2. Create Card if UID provided
+        // 2. Handle Card Linkage if UID provided
         if (uid) {
-            // Check if card already exists and is active
+            // Check if card exists
             const { data: existingCard } = await supabase
                 .from('cards')
-                .select('id')
+                .select('id, customer_id')
                 .eq('uid', uid)
-                .eq('is_active', true)
                 .maybeSingle();
 
             if (existingCard) {
-                // Cleanup partial customer if needed (though RLS/DB constraints might handle this better)
-                // For now, return error.
-                return NextResponse.json({ message: 'Card already registered' }, { status: 400 });
+                if (existingCard.customer_id) {
+                    // Card is already assigned to someone else
+                    return NextResponse.json({ message: 'Card already assigned to another customer' }, { status: 400 });
+                } else {
+                    // Link existing card to this new customer
+                    const { error: linkError } = await supabase
+                        .from('cards')
+                        .update({ customer_id: customerId, is_active: true })
+                        .eq('id', existingCard.id);
+
+                    if (linkError) throw linkError;
+                }
+            } else {
+                // Create new card
+                const { error: cardError } = await supabase
+                    .from('cards')
+                    .insert([{ uid, customer_id: customerId, is_active: true }]);
+
+                if (cardError) throw cardError;
             }
-
-            const { error: cardError } = await supabase
-                .from('cards')
-                .insert([{ uid, customer_id: customerId, is_active: true }]);
-
-            if (cardError) throw cardError;
         }
 
-        apiLogger.info('Customer created', { id: customerId, full_name, hasCard: !!uid });
+        await logAudit({
+            action: 'CREATE',
+            entity: 'customers',
+            entityId: customerId,
+            details: { full_name, phone, email, has_card: !!uid },
+            req: request
+        });
 
         return createdResponse(
             { id: customerId, full_name, phone, email, uid },
@@ -122,5 +167,45 @@ export async function POST(request) {
 
     } catch (error) {
         return handleApiError(error, 'POST /api/customers');
+    }
+}
+
+export async function PATCH(request) {
+    try {
+        if (!session || session.role !== 'admin') {
+            return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+        }
+
+        // Enforce Maintenance Mode
+        const maintenance = await enforceMaintenance(session);
+        if (maintenance) return maintenance;
+
+        const body = await request.json();
+        const { id, restore } = body;
+
+        if (!id) return NextResponse.json({ message: 'ID is required' }, { status: 400 });
+
+        if (restore) {
+            const { error } = await supabase
+                .from('customers')
+                .update({ deleted_at: null })
+                .eq('id', id);
+
+            if (error) throw error;
+
+            await logAudit({
+                action: 'RESTORE',
+                entity: 'customers',
+                entityId: id,
+                details: { restored_at: new Date().toISOString() },
+                req: request
+            });
+
+            return successResponse({ id }, 200, 'Customer restored successfully');
+        }
+
+        return NextResponse.json({ message: 'No action taken' });
+    } catch (error) {
+        return handleApiError(error, 'PATCH /api/customers');
     }
 }

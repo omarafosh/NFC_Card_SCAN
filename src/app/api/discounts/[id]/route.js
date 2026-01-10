@@ -2,10 +2,16 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { handleApiError, successResponse } from '@/lib/errorHandler';
+import { enforceMaintenance } from '@/lib/maintenance';
 
 export async function PUT(request, { params }) {
     const session = await getSession();
     if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+
+    // Enforce Maintenance Mode
+    const maintenance = await enforceMaintenance(session);
+    if (maintenance) return maintenance;
+
     const { id } = await params;
 
     try {
@@ -36,6 +42,11 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
     const session = await getSession();
     if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+
+    // Enforce Maintenance Mode
+    const maintenance = await enforceMaintenance(session);
+    if (maintenance) return maintenance;
+
     const { id } = await params;
 
     try {

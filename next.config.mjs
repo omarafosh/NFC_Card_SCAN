@@ -50,7 +50,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: https:",
-              "connect-src 'self' ws: wss:", // Allow WebSocket for NFC reader
+              `connect-src 'self' ws: wss: ${process.env.NEXT_PUBLIC_SUPABASE_URL || ''}`, // Allow Supabase
               "frame-ancestors 'none'",
             ].join('; ')
           }

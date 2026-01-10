@@ -1,12 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Plus, Building2, Zap, Trash2, Edit, Key, Monitor, Users, MapPin } from 'lucide-react';
+import { Plus, Building2, Zap, Trash2, Edit, Key, Monitor, Users, MapPin, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLanguage } from '@/lib/LanguageContext';
 import DataTable from '@/components/DataTable';
 
 export default function ManagementPage() {
-    const { t, dir } = useLanguage();
+    const { language, t, dir } = useLanguage();
     const [activeTab, setActiveTab] = useState('branches');
     const [mounted, setMounted] = useState(false);
 
@@ -22,7 +22,7 @@ export default function ManagementPage() {
                 <div>
                     <h1 className="text-3xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
                         {t('enterprise_management')}
-                        <span className="text-sm font-normal text-gray-400 mt-1">Enterprise</span>
+                        <span className="text-sm font-normal text-gray-400 mt-1 uppercase tracking-widest">{t('enterprise')}</span>
                     </h1>
                     <p className="text-gray-500 dark:text-gray-400 mt-1">{t('enterprise_desc')}</p>
                 </div>
@@ -75,12 +75,13 @@ function BranchManagement() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const [showDeleted, setShowDeleted] = useState(false);
     const [formData, setFormData] = useState({ id: null, name: '', location: '', is_active: true });
 
     const fetchBranches = async () => {
         setLoading(true);
         try {
-            const res = await fetch('/api/branches');
+            const res = await fetch(`/api/branches?deleted=${showDeleted}`);
             const data = await res.json();
             setBranches(data.data || []);
         } catch (e) {
@@ -92,7 +93,7 @@ function BranchManagement() {
 
     useEffect(() => {
         fetchBranches();
-    }, []);
+    }, [showDeleted]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -127,6 +128,22 @@ function BranchManagement() {
         }
     };
 
+    const handleRestore = async (id) => {
+        try {
+            const res = await fetch(`/api/branches`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, restore: true }),
+            });
+            if (res.ok) {
+                toast.success(t('restore_success') || 'Restored');
+                fetchBranches();
+            }
+        } catch (e) {
+            toast.error(t('restore_error'));
+        }
+    };
+
     const filteredBranches = branches.filter(b =>
         b.name.toLowerCase().includes(search.toLowerCase()) ||
         (b.location && b.location.toLowerCase().includes(search.toLowerCase()))
@@ -152,8 +169,8 @@ function BranchManagement() {
             header: t('status'),
             accessor: 'is_active',
             cell: (row) => (
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${row.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    Active
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${row.deleted_at ? 'bg-orange-100 text-orange-700' : row.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {row.deleted_at ? t('deleted') || 'Deleted' : row.is_active ? t('active') : t('deactivated')}
                 </span>
             )
         },
@@ -162,26 +179,38 @@ function BranchManagement() {
             className: 'w-24',
             cell: (row) => (
                 <div className={`flex gap-1 ${dir === 'rtl' ? 'justify-end' : 'justify-start'}`}>
-                    <button
-                        onClick={() => {
-                            setFormData({
-                                id: row.id,
-                                name: row.name,
-                                location: row.location || '',
-                                is_active: row.is_active
-                            });
-                            setShowModal(true);
-                        }}
-                        className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                    >
-                        <Edit size={16} />
-                    </button>
-                    <button
-                        onClick={() => handleDelete(row.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                        <Trash2 size={16} />
-                    </button>
+                    {row.deleted_at ? (
+                        <button
+                            onClick={() => handleRestore(row.id)}
+                            className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                            title={t('restore')}
+                        >
+                            <RefreshCw size={16} />
+                        </button>
+                    ) : (
+                        <>
+                            <button
+                                onClick={() => {
+                                    setFormData({
+                                        id: row.id,
+                                        name: row.name,
+                                        location: row.location || '',
+                                        is_active: row.is_active
+                                    });
+                                    setShowModal(true);
+                                }}
+                                className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            >
+                                <Edit size={16} />
+                            </button>
+                            <button
+                                onClick={() => handleDelete(row.id)}
+                                className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </>
+                    )}
                 </div>
             )
         }
@@ -196,17 +225,28 @@ function BranchManagement() {
                 searchTerm={search}
                 onSearchChange={setSearch}
                 actions={
-                    <button
-                        onClick={() => setShowModal(true)}
-                        className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
-                    >
-                        <Plus size={20} />
-                        {t('add_branch')}
-                    </button>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button
+                            onClick={() => setShowDeleted(!showDeleted)}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all font-bold text-sm ${showDeleted
+                                ? 'bg-orange-50 border-orange-200 text-orange-600'
+                                : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                }`}
+                        >
+                            {showDeleted ? <EyeOff size={18} /> : <Eye size={18} />}
+                            {showDeleted ? (t('hide_deleted') || 'Hide Deleted') : (t('show_deleted') || 'Show Deleted')}
+                        </button>
+                        <button
+                            onClick={() => setShowModal(true)}
+                            className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
+                        >
+                            <Plus size={20} />
+                            {t('add_branch')}
+                        </button>
+                    </div>
                 }
             />
 
-            {/* Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md animate-in fade-in zoom-in duration-200">
@@ -245,7 +285,7 @@ function BranchManagement() {
                                         setShowModal(false);
                                         setFormData({ id: null, name: '', location: '', is_active: true });
                                     }}
-                                    className="flex-1 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold font-bold text-gray-600 dark:text-gray-300"
+                                    className="flex-1 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold text-gray-600 dark:text-gray-300"
                                 >
                                     {t('cancel')}
                                 </button>
@@ -265,13 +305,14 @@ function TerminalManagement() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const [showDeleted, setShowDeleted] = useState(false);
     const [formData, setFormData] = useState({ id: null, branch_id: '', name: '', connection_url: 'cloud-sync', is_active: true });
 
     const fetchData = async () => {
         setLoading(true);
         try {
             const [tRes, bRes] = await Promise.all([
-                fetch('/api/terminals'),
+                fetch(`/api/terminals?deleted=${showDeleted}`),
                 fetch('/api/branches')
             ]);
             const tData = await tRes.json();
@@ -287,7 +328,7 @@ function TerminalManagement() {
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [showDeleted]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -322,6 +363,22 @@ function TerminalManagement() {
         }
     };
 
+    const handleRestore = async (id) => {
+        try {
+            const res = await fetch(`/api/terminals`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, restore: true }),
+            });
+            if (res.ok) {
+                toast.success(t('restore_success') || 'Restored');
+                fetchData();
+            }
+        } catch (e) {
+            toast.error(t('restore_error'));
+        }
+    };
+
     const filteredTerminals = terminals.filter(t =>
         t.name.toLowerCase().includes(search.toLowerCase())
     );
@@ -351,13 +408,15 @@ function TerminalManagement() {
             header: t('status'),
             accessor: 'last_sync',
             cell: (row) => {
+                if (row.deleted_at) {
+                    return <span className="text-[10px] font-bold uppercase text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">{t('deleted') || 'Deleted'}</span>;
+                }
                 const lastSync = row.last_sync ? new Date(row.last_sync) : null;
-                const isOnline = lastSync && (new Date() - lastSync) < 10 * 60 * 1000; // 10 minutes
-
+                const isOnline = lastSync && (new Date() - lastSync) < 10 * 60 * 1000;
                 return (
                     <div className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider ${isOnline ? 'text-green-500' : 'text-gray-400'}`}>
                         <div className={`h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
-                        {isOnline ? 'Online' : 'Offline'}
+                        {isOnline ? t('online') : t('offline')}
                     </div>
                 );
             }
@@ -367,27 +426,39 @@ function TerminalManagement() {
             className: 'w-24',
             cell: (row) => (
                 <div className={`flex gap-1 ${dir === 'rtl' ? 'justify-end' : 'justify-start'}`}>
-                    <button
-                        onClick={() => {
-                            setFormData({
-                                id: row.id,
-                                branch_id: row.branch_id || '',
-                                name: row.name,
-                                connection_url: row.connection_url,
-                                is_active: row.is_active
-                            });
-                            setShowModal(true);
-                        }}
-                        className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                    >
-                        <Edit size={16} />
-                    </button>
-                    <button
-                        onClick={() => handleDelete(row.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                        <Trash2 size={16} />
-                    </button>
+                    {row.deleted_at ? (
+                        <button
+                            onClick={() => handleRestore(row.id)}
+                            className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                            title={t('restore')}
+                        >
+                            <RefreshCw size={16} />
+                        </button>
+                    ) : (
+                        <>
+                            <button
+                                onClick={() => {
+                                    setFormData({
+                                        id: row.id,
+                                        branch_id: row.branch_id || '',
+                                        name: row.name,
+                                        connection_url: row.connection_url,
+                                        is_active: row.is_active
+                                    });
+                                    setShowModal(true);
+                                }}
+                                className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            >
+                                <Edit size={16} />
+                            </button>
+                            <button
+                                onClick={() => handleDelete(row.id)}
+                                className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </>
+                    )}
                 </div>
             )
         }
@@ -402,17 +473,28 @@ function TerminalManagement() {
                 searchTerm={search}
                 onSearchChange={setSearch}
                 actions={
-                    <button
-                        onClick={() => setShowModal(true)}
-                        className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
-                    >
-                        <Plus size={20} />
-                        {t('add_terminal')}
-                    </button>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button
+                            onClick={() => setShowDeleted(!showDeleted)}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all font-bold text-sm ${showDeleted
+                                ? 'bg-orange-50 border-orange-200 text-orange-600'
+                                : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                }`}
+                        >
+                            {showDeleted ? <EyeOff size={18} /> : <Eye size={18} />}
+                            {showDeleted ? (t('hide_deleted') || 'Hide Deleted') : (t('show_deleted') || 'Show Deleted')}
+                        </button>
+                        <button
+                            onClick={() => setShowModal(true)}
+                            className="flex-1 md:flex-none bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
+                        >
+                            <Plus size={20} />
+                            {t('add_terminal')}
+                        </button>
+                    </div>
                 }
             />
 
-            {/* Terminal Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md animate-in fade-in zoom-in duration-200">
@@ -480,19 +562,24 @@ function UserManagement() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const [showDeleted, setShowDeleted] = useState(false);
+    const [currentUser, setCurrentUser] = useState(null);
     const [formData, setFormData] = useState({ id: null, username: '', password: '', role: 'staff', branch_id: '' });
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [uRes, bRes] = await Promise.all([
-                fetch('/api/users'),
-                fetch('/api/branches')
+            const [uRes, bRes, meRes] = await Promise.all([
+                fetch(`/api/users?deleted=${showDeleted}`),
+                fetch('/api/branches'),
+                fetch('/api/auth/me')
             ]);
             const uData = await uRes.json();
             const bData = await bRes.json();
+            const meData = await meRes.json();
             setUsers(uData.data || []);
             setBranches(bData.data || []);
+            setCurrentUser(meData.user || null);
         } catch (e) {
             toast.error(t('error_loading'));
         } finally {
@@ -502,7 +589,7 @@ function UserManagement() {
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [showDeleted]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -544,6 +631,22 @@ function UserManagement() {
         }
     };
 
+    const handleRestore = async (id) => {
+        try {
+            const res = await fetch(`/api/users`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, restore: true }),
+            });
+            if (res.ok) {
+                toast.success(t('restore_success') || 'Restored');
+                fetchData();
+            }
+        } catch (e) {
+            toast.error(t('restore_error'));
+        }
+    };
+
     const filteredUsers = users.filter(u =>
         u.username.toLowerCase().includes(search.toLowerCase())
     );
@@ -558,7 +661,7 @@ function UserManagement() {
             header: t('role'),
             accessor: 'role',
             cell: (row) => (
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${row.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${row.role === 'superadmin' ? 'bg-black text-white' : row.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
                     {t(row.role)}
                 </span>
             )
@@ -569,36 +672,52 @@ function UserManagement() {
             cell: (row) => branches.find(b => b.id === row.branch_id)?.name || '---'
         },
         {
-            header: t('date'),
-            accessor: 'created_at',
-            cell: (row) => <span className="text-gray-400 text-xs">{new Date(row.created_at).toLocaleDateString()}</span>
+            header: t('status'),
+            accessor: 'deleted_at',
+            cell: (row) => row.deleted_at ? (
+                <span className="text-[10px] font-bold uppercase text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">{t('deleted') || 'Deleted'}</span>
+            ) : (
+                <span className="text-[10px] font-bold uppercase text-green-600 bg-green-100 px-2 py-0.5 rounded-full">{t('active')}</span>
+            )
         },
         {
             header: t('actions'),
             className: 'w-24',
             cell: (row) => (
                 <div className={`flex gap-1`}>
-                    <button
-                        onClick={() => {
-                            setFormData({
-                                id: row.id,
-                                username: row.username,
-                                password: '', // Reset password for security/privacy
-                                role: row.role,
-                                branch_id: row.branch_id || ''
-                            });
-                            setShowModal(true);
-                        }}
-                        className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                    >
-                        <Edit size={16} />
-                    </button>
-                    <button
-                        onClick={() => handleDelete(row.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                        <Trash2 size={16} />
-                    </button>
+                    {row.deleted_at ? (
+                        <button
+                            onClick={() => handleRestore(row.id)}
+                            className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                            title={t('restore')}
+                        >
+                            <RefreshCw size={16} />
+                        </button>
+                    ) : (
+                        <>
+                            <button
+                                onClick={() => {
+                                    setFormData({
+                                        id: row.id,
+                                        username: row.username,
+                                        password: '',
+                                        role: row.role,
+                                        branch_id: row.branch_id || ''
+                                    });
+                                    setShowModal(true);
+                                }}
+                                className="p-2 text-gray-400 hover:text-blue-500 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            >
+                                <Edit size={16} />
+                            </button>
+                            <button
+                                onClick={() => handleDelete(row.id)}
+                                className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </>
+                    )}
                 </div>
             )
         }
@@ -613,17 +732,28 @@ function UserManagement() {
                 searchTerm={search}
                 onSearchChange={setSearch}
                 actions={
-                    <button
-                        onClick={() => setShowModal(true)}
-                        className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
-                    >
-                        <Plus size={20} />
-                        {t('add_user')}
-                    </button>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button
+                            onClick={() => setShowDeleted(!showDeleted)}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all font-bold text-sm ${showDeleted
+                                ? 'bg-orange-50 border-orange-200 text-orange-600'
+                                : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                }`}
+                        >
+                            {showDeleted ? <EyeOff size={18} /> : <Eye size={18} />}
+                            {showDeleted ? (t('hide_deleted') || 'Hide Deleted') : (t('show_deleted') || 'Show Deleted')}
+                        </button>
+                        <button
+                            onClick={() => setShowModal(true)}
+                            className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
+                        >
+                            <Plus size={20} />
+                            {t('add_user')}
+                        </button>
+                    </div>
                 }
             />
 
-            {/* Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md animate-in fade-in zoom-in duration-200">
@@ -654,7 +784,7 @@ function UserManagement() {
                                     value={formData.password}
                                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                 />
-                                {formData.id && <p className="text-[10px] text-gray-400 mt-1">Leave blank to keep current password</p>}
+                                {formData.id && <p className={`text-[10px] text-gray-400 mt-1 text-start`}>{t('password_hint')}</p>}
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -668,6 +798,7 @@ function UserManagement() {
                                     >
                                         <option value="admin">{t('admin')}</option>
                                         <option value="staff">{t('staff')}</option>
+                                        {currentUser?.role === 'superadmin' && <option value="superadmin">{t('superadmin')}</option>}
                                     </select>
                                 </div>
                                 <div>

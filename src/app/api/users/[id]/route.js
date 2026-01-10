@@ -6,7 +6,10 @@ import { handleApiError, successResponse } from '@/lib/errorHandler';
 
 export async function PUT(request, { params }) {
     const session = await getSession();
-    if (!session || session.role !== 'admin') {
+    const isSuperAdmin = session?.role === 'superadmin';
+    const isAdmin = session?.role === 'admin';
+
+    if (!session || (!isAdmin && !isSuperAdmin)) {
         return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
     const { id } = await params;
@@ -14,6 +17,18 @@ export async function PUT(request, { params }) {
     try {
         const body = await request.json();
         const { username, password, role, branch_id } = body;
+
+        // Protection for superadmin
+        if (!isSuperAdmin) {
+            // Cannot change TO superadmin
+            if (role === 'superadmin') return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+
+            // Cannot edit existing superadmin
+            const { data: targetUser } = await supabase.from('users').select('role').eq('id', id).single();
+            if (targetUser?.role === 'superadmin') {
+                return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+            }
+        }
 
         const updateData = {
             username,

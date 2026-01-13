@@ -287,6 +287,13 @@ export default function ScanPage() {
     };
 
     const handleConnectHwReader = async () => {
+        // 🔒 Secure Context Check (HTTPS Requirement)
+        if (!navigator.usb && !navigator.hid) {
+            toast.error("NFC Hardware Access requires HTTPS or Localhost.");
+            console.error('[Hardware] API not available. Ensure you are using HTTPS.');
+            return;
+        }
+
         if (!nfcReaderRef.current) {
             nfcReaderRef.current = new NfcReader();
             nfcReaderRef.current.onScan = (uid) => {

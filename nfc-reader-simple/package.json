@@ -1,7 +1,7 @@
 {
     "name": "nfc-reader-simple",
-    "version": "1.0.0",
-    "description": "Simple NFC Reader for macOS",
+    "version": "2.0.0",
+    "description": "Remote NFC Reader using Supabase Realtime",
     "main": "reader.js",
     "scripts": {
         "start": "node reader.js"
@@ -9,6 +9,7 @@
     "dependencies": {
         "nfc-pcsc": "^0.8.1",
         "dotenv": "^16.0.3",
-        "node-notifier": "^10.0.1"
+        "node-notifier": "^10.0.1",
+        "@supabase/supabase-js": "^2.39.0"
     }
 }

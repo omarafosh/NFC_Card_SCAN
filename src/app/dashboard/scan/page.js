@@ -287,10 +287,15 @@ export default function ScanPage() {
     };
 
     const handleConnectHwReader = async () => {
-        // 🔒 Secure Context Check (HTTPS Requirement)
+        // 1. Check for Secure Context (HTTPS)
+        if (!window.isSecureContext) {
+            toast.error(t('https_required') || "Hardware access requires HTTPS!");
+            return;
+        }
+
+        // 2. Check for Browser Support (WebHID/WebUSB) - Safari does not support this!
         if (!navigator.usb && !navigator.hid) {
-            toast.error("NFC Hardware Access requires HTTPS or Localhost.");
-            console.error('[Hardware] API not available. Ensure you are using HTTPS.');
+            toast.error("Browser not supported. Please use Chrome or Edge.");
             return;
         }
 

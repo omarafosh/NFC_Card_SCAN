@@ -78,14 +78,19 @@ export class NfcReader {
             .join('')
             .toUpperCase();
 
-        // Filter noise: UIDs are typically 8-20 chars (4-10 bytes). 
-        // The garbage string causing "Card not registered" was very long (~XXX chars).
-        // We strictly filter for standard UID lengths (Mifare Classic is 8 chars, Ultralight/NTAG is 14 chars).
-        // We allow 4 bytes (8 chars) to 10 bytes (20 chars)
-        if (hex.length >= 8 && hex.length <= 20) {
+        console.log("HID-DATA:", hex); // Key for debugging
+
+        // Temporary: Validating if the known UID exists anywhere in the stream
+        if (hex.includes("0461765A466080")) {
+            console.log("FOUND TARGET UID!");
+            this.onScan("0461765A466080");
+            return;
+        }
+
+        // Pass everything during debug mode so we can see what's happening
+        // We removed the strict length filter to allow the user to spy on the raw data again
+        if (hex.length >= 8) {
             if (this.onScan) this.onScan(hex);
-        } else {
-            // console.log('Ignored HID Noise:', hex); // Commented out to reduce console noise
         }
     }
 

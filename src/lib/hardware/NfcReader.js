@@ -63,6 +63,24 @@ export class NfcReader {
             return false;
         }
     }
+    async setupHid() {
+        await this.device.open();
+        this.device.oninputreport = (e) => this.handleInputReport(e);
+        if (this.onStatusChange) this.onStatusChange('connected', `HID: ${this.device.productName}`);
+    }
+
+    handleInputReport(event) {
+        const { data } = event;
+        const hex = Array.from(new Uint8Array(data.buffer))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('')
+            .toUpperCase();
+
+        // Basic filtering for common noise
+        if (hex.length >= 8) {
+            if (this.onScan) this.onScan(hex);
+        }
+    }
 
     async setupUsb() {
         await this.device.open();

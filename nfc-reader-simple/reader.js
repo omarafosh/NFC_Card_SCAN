@@ -1,30 +1,37 @@
 #!/usr/bin/env node
 
 /**
- * Simple NFC Reader for macOS
- * Reads NFC cards and sends UIDs to the web dashboard
+ * Remote NFC Reader using Supabase Realtime
+ * Writes directly to database - all dashboards receive updates instantly
  */
 
 require('dotenv').config();
 const { NFC } = require('nfc-pcsc');
+const { createClient } = require('@supabase/supabase-js');
 const notifier = require('node-notifier');
 
 // Configuration from .env
-const WEBSITE_URL = process.env.WEBSITE_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const TERMINAL_ID = process.env.TERMINAL_ID;
 
-if (!WEBSITE_URL || !TERMINAL_ID) {
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !TERMINAL_ID) {
     console.error('❌ Error: Missing configuration!');
-    console.error('Please create a .env file with WEBSITE_URL and TERMINAL_ID');
+    console.error('Please add to .env file:');
+    console.error('  SUPABASE_URL=your_supabase_url');
+    console.error('  SUPABASE_SERVICE_KEY=your_service_role_key');
+    console.error('  TERMINAL_ID=15');
     process.exit(1);
 }
 
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
 console.log('╔════════════════════════════════════════╗');
-console.log('║   NFC Reader - Simple Mode v1.0       ║');
+console.log('║   Remote NFC Reader v2.0              ║');
 console.log('╚════════════════════════════════════════╝');
 console.log('');
 console.log(`📡 Terminal ID: ${TERMINAL_ID}`);
-console.log(`🌐 Website: ${WEBSITE_URL}`);
+console.log(`🗄️  Database: Connected`);
 console.log('');
 console.log('⏳ Waiting for NFC reader...');
 
@@ -34,7 +41,7 @@ nfc.on('reader', reader => {
     console.log('✅ Reader connected:', reader.reader.name);
 
     notifier.notify({
-        title: 'NFC Reader',
+        title: 'Remote NFC Reader',
         message: 'Reader connected successfully!',
         sound: true
     });
@@ -47,43 +54,62 @@ nfc.on('reader', reader => {
         console.log('🔢 UID:', uid);
         console.log('⏰ Time:', new Date().toLocaleString('ar-EG'));
 
-        // Send to web dashboard via external API
         try {
-            const response = await fetch(`${WEBSITE_URL}/api/external-scan`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    uid,
-                    terminal_id: parseInt(TERMINAL_ID)
-                })
-            });
+            // Find card in database
+            const { data: cardData, error: cardError } = await supabase
+                .from('cards')
+                .select('*, customers(*)')
+                .eq('uid', uid)
+                .eq('is_active', true)
+                .is('deleted_at', null)
+                .maybeSingle();
 
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Sent to dashboard successfully!');
-
-                if (data.customer) {
-                    console.log('👤 Customer:', data.customer.full_name);
-                    notifier.notify({
-                        title: 'Card Scanned',
-                        message: `Welcome ${data.customer.full_name}!`,
-                        sound: true
-                    });
-                } else {
-                    console.log('⚠️  Card not registered');
-                    notifier.notify({
-                        title: 'Unknown Card',
-                        message: 'Card not registered in system',
-                        sound: true
-                    });
-                }
-            } else {
-                console.log('❌ Failed to send to dashboard');
+            if (cardError) {
+                console.log('❌ Database error:', cardError.message);
+                return;
             }
+
+            // Insert scan event
+            const { error: scanError } = await supabase
+                .from('scan_events')
+                .insert({
+                    uid,
+                    customer_id: cardData?.customer_id || null,
+                    terminal_id: parseInt(TERMINAL_ID),
+                    status: cardData ? 'success' : 'unknown_card',
+                    scanned_at: new Date().toISOString()
+                });
+
+            if (scanError) {
+                console.log('❌ Failed to record scan:', scanError.message);
+                return;
+            }
+
+            if (cardData && cardData.customers) {
+                console.log('✅ Card registered!');
+                console.log('👤 Customer:', cardData.customers.full_name);
+                console.log('💰 Balance:', cardData.customers.balance);
+
+                notifier.notify({
+                    title: 'Card Scanned',
+                    message: `Welcome ${cardData.customers.full_name}!`,
+                    sound: true
+                });
+            } else {
+                console.log('⚠️  Card not registered');
+                console.log('   UID:', uid);
+
+                notifier.notify({
+                    title: 'Unknown Card',
+                    message: `UID: ${uid}`,
+                    sound: true
+                });
+            }
+
+            console.log('📡 Sent to all dashboards via Realtime');
+
         } catch (error) {
-            console.log('❌ Network error:', error.message);
+            console.log('❌ Error:', error.message);
         }
 
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -97,7 +123,7 @@ nfc.on('reader', reader => {
     reader.on('end', () => {
         console.log('❌ Reader disconnected');
         notifier.notify({
-            title: 'NFC Reader',
+            title: 'Remote NFC Reader',
             message: 'Reader disconnected',
             sound: true
         });
@@ -116,5 +142,6 @@ process.on('SIGINT', () => {
 
 console.log('');
 console.log('💡 Ready! Place a card on the reader...');
+console.log('   All dashboards will receive updates instantly');
 console.log('   Press Ctrl+C to exit');
 console.log('');

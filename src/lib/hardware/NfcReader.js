@@ -32,9 +32,8 @@ export class NfcReader {
             if ('hid' in navigator) {
                 try {
                     console.log('Requesting WebHID device...');
-                    const devices = await navigator.hid.requestDevice({
-                        filters: [{ vendorId: this.vendorId, productId: this.productId }]
-                    });
+                    // Remove filters to allow ALL HID devices to appear (user selects manually)
+                    const devices = await navigator.hid.requestDevice({ filters: [] });
 
                     if (devices.length > 0) {
                         this.device = devices[0];

@@ -47,19 +47,16 @@ nfc.on('reader', reader => {
         console.log('🔢 UID:', uid);
         console.log('⏰ Time:', new Date().toLocaleString('ar-EG'));
 
-        // Send to web dashboard via WebSocket simulation
-        // The dashboard will pick this up via Supabase Realtime
+        // Send to web dashboard via external API
         try {
-            const response = await fetch(`${WEBSITE_URL}/api/scan`, {
+            const response = await fetch(`${WEBSITE_URL}/api/external-scan`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'x-terminal-id': TERMINAL_ID
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     uid,
-                    terminal_id: TERMINAL_ID,
-                    source: 'external_reader'
+                    terminal_id: parseInt(TERMINAL_ID)
                 })
             });
 

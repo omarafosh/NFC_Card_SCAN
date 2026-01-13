@@ -20,6 +20,13 @@ export class NfcReader {
     }
 
     async connect() {
+        console.log("NFC Reader Driver v3: HID Force Mode");
+        // Visual indicator to confirm new code is loaded
+        if (typeof window !== 'undefined' && window.toast) { // specific check if toast is globally available or handled in component
+            // actually toast is not here, it is in component. 
+            // We can return a specific error that the component shows.
+        }
+
         try {
             // Priority 1: WebHID (Recommended for Mac/Windows)
             if ('hid' in navigator) {
@@ -45,29 +52,7 @@ export class NfcReader {
                 }
             }
 
-            // WebUSB Temporarily Disabled to force HID debugging
-            /*
-            if ('usb' in navigator) {
-                try {
-                    const device = await navigator.usb.requestDevice({
-                        filters: [{ vendorId: this.vendorId, productId: this.productId }]
-                    });
-                    if (device) {
-                        this.device = device;
-                        this.type = 'usb';
-                        await this.setupUsb();
-                        return true;
-                    }
-                } catch (e) {
-                    console.log('WebUSB failed (likely protected interface):', e.message);
-                    if (this.onStatusChange && e.message.includes('polic')) {
-                        this.onStatusChange('error', 'Browser Blocked USB mode. Please try using Chrome/Edge on Windows or use HID mode.');
-                        return false;
-                    }
-                }
-            }
-            */
-
+            // WebUSB Removed completely to prevent Protected Interface error
             if (!('hid' in navigator)) {
                 if (this.onStatusChange) this.onStatusChange('error', 'WebHID API not supported in this browser.');
             }

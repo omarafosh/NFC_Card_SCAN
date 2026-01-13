@@ -48,7 +48,7 @@ export async function POST(request) {
         if (!card) {
             return NextResponse.json({
                 status: 'unknown_card',
-                message: 'Card not registered',
+                message: `Card not registered (${uid})`,
                 uid
             });
         }

@@ -68,7 +68,7 @@ export class NfcReader {
         await this.device.open();
         this.device.oninputreport = (e) => this.handleInputReport(e);
         if (this.onStatusChange) this.onStatusChange('connected', `HID: ${this.device.productName}`);
-        this.startPolling();
+        this.startPolling(); // Keep polling active to trigger card response
     }
 
     handleInputReport(event) {
@@ -78,19 +78,16 @@ export class NfcReader {
             .join('')
             .toUpperCase();
 
-        console.log("HID-DATA:", hex); // Key for debugging
+        console.log("HID-DATA:", hex);
 
-        // Temporary: Validating if the known UID exists anywhere in the stream
-        if (hex.includes("0461765A466080")) {
-            console.log("FOUND TARGET UID!");
-            this.onScan("0461765A466080");
-            return;
-        }
-
-        // Pass everything during debug mode so we can see what's happening
-        // We removed the strict length filter to allow the user to spy on the raw data again
-        if (hex.length >= 8) {
+        // STABILITY FILTER:
+        // The noise (EC...) is extremely long (>100 chars).
+        // The Real UID is short (8-20 chars).
+        // We filter out anything > 32 chars to stop the UI spam.
+        if (hex.length >= 8 && hex.length <= 32) {
             if (this.onScan) this.onScan(hex);
+        } else {
+            // Ignored long noise report
         }
     }
 

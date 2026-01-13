@@ -20,7 +20,7 @@ export class NfcReader {
     }
 
     async connect() {
-        console.log("NFC Reader Driver v3: HID Force Mode");
+        console.log("NFC Reader Driver v3.2: Noise Filter Enabled");
         // Visual indicator to confirm new code is loaded
         if (typeof window !== 'undefined' && window.toast) { // specific check if toast is globally available or handled in component
             // actually toast is not here, it is in component. 

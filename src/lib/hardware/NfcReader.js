@@ -21,18 +21,42 @@ export class NfcReader {
 
     async connect() {
         try {
-            // Prefer WebUSB for CCID devices like ACR122U
+            // Priority 1: WebHID (Better stability for ACR122U on Chrome)
+            if ('hid' in navigator) {
+                try {
+                    const devices = await navigator.hid.requestDevice({
+                        filters: [{ vendorId: this.vendorId, productId: this.productId }]
+                    });
+                    if (devices.length > 0) {
+                        this.device = devices[0];
+                        this.type = 'hid';
+                        await this.setupHid();
+                        return true;
+                    }
+                } catch (e) { console.log('WebHID skip/fail:', e.message); }
+            }
+
+            // Priority 2: WebUSB (Often blocked by "protected interface" policy)
             if ('usb' in navigator) {
-                const device = await navigator.usb.requestDevice({
-                    filters: [{ vendorId: this.vendorId, productId: this.productId }]
-                });
-                if (device) {
-                    this.device = device;
-                    this.type = 'usb';
-                    await this.setupUsb();
-                    return true;
+                try {
+                    const device = await navigator.usb.requestDevice({
+                        filters: [{ vendorId: this.vendorId, productId: this.productId }]
+                    });
+                    if (device) {
+                        this.device = device;
+                        this.type = 'usb';
+                        await this.setupUsb();
+                        return true;
+                    }
+                } catch (e) {
+                    console.log('WebUSB failed (likely protected interface):', e.message);
+                    if (this.onStatusChange && e.message.includes('polic')) {
+                        this.onStatusChange('error', 'Browser Blocked USB mode. Please try using Chrome/Edge on Windows or use HID mode.');
+                        return false;
+                    }
                 }
             }
+
             return false;
         } catch (error) {
             console.error('NFC Connection failed:', error);

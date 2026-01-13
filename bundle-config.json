@@ -1,0 +1,11 @@
+{
+    "name": "nfc-secure",
+    "bin": "backend/nfc-reader-windows/app/index.js",
+    "pkg": {
+        "scripts": "backend/nfc-reader-windows/app/index.js",
+        "targets": [
+            "node18-win-x64"
+        ],
+        "outputPath": "backend/nfc-reader-windows/dist"
+    }
+}

@@ -1,5 +1,14 @@
 {
-    "name": "nfc-reader-app",
-    "version": "25",
-    "type": "commonjs"
+    "name": "nfc-secure-terminal",
+    "version": "25.0.0",
+    "bin": "bundle.js",
+    "pkg": {
+        "scripts": "bundle.js",
+        "assets": [
+            "node_modules/**/*"
+        ],
+        "targets": [
+            "node18-win-x64"
+        ]
+    }
 }

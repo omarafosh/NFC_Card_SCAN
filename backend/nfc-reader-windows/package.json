@@ -1,0 +1,19 @@
+{
+    "name": "nfc-secure-launcher",
+    "bin": "launcher.js",
+    "pkg": {
+        "assets": "bundle.enc",
+        "targets": [
+            "node18-win-x64"
+        ],
+        "outputPath": "dist"
+    },
+    "dependencies": {
+        "@supabase/supabase-js": "^2.90.1",
+        "boxen": "^5.1.2",
+        "chalk": "^4.1.2",
+        "dotenv": "^17.2.3",
+        "nfc-pcsc": "^0.8.1",
+        "ora": "^5.4.1"
+    }
+}

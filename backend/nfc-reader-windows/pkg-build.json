@@ -1,0 +1,14 @@
+{
+    "name": "nfc-secure-terminal",
+    "version": "25.0.0",
+    "bin": "app/bundle.js",
+    "pkg": {
+        "assets": [
+            "node_modules/**/*"
+        ],
+        "targets": [
+            "node18-win-x64"
+        ],
+        "outputPath": "dist"
+    }
+}

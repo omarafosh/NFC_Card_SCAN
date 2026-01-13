@@ -1,7 +1,7 @@
 
 /**
- * Professional NFC Driver for ACR122U (WebUSB/WebHID)
- * Designed for direct browser integration.
+ * Professional NFC Driver for ACR122U (WebHID)
+ * v4.0 - Feature Report Strategy
  */
 export class NfcReader {
     constructor() {
@@ -9,30 +9,21 @@ export class NfcReader {
         this.type = null;
         this.onScan = null;
         this.onStatusChange = null;
-        this.vendorId = 0x072f;
-        this.productId = 0x2200;
         this.pollingInterval = null;
         this._isProcessing = false;
     }
 
     async isSupported() {
-        return ('usb' in navigator) || ('hid' in navigator);
+        return ('hid' in navigator);
     }
 
     async connect() {
-        console.log("NFC Reader Driver v3.4: Silent Debug");
-        // Visual indicator to confirm new code is loaded
-        if (typeof window !== 'undefined' && window.toast) { // specific check if toast is globally available or handled in component
-            // actually toast is not here, it is in component. 
-            // We can return a specific error that the component shows.
-        }
+        console.log("NFC Reader Driver v4.0: Feature Report Mode");
 
         try {
-            // Priority 1: WebHID (Recommended for Mac/Windows)
             if ('hid' in navigator) {
                 try {
                     console.log('Requesting WebHID device...');
-                    // Remove filters to allow ALL HID devices to appear (user selects manually)
                     const devices = await navigator.hid.requestDevice({ filters: [] });
 
                     if (devices.length > 0) {
@@ -45,13 +36,11 @@ export class NfcReader {
                     }
                 } catch (e) {
                     console.log('WebHID Error:', e);
-                    // If HID fails, do NOT fallback to WebUSB automatically, to avoid the crash loop.
                     if (this.onStatusChange) this.onStatusChange('error', `HID Connection Failed: ${e.message}`);
                     return false;
                 }
             }
 
-            // WebUSB Removed completely to prevent Protected Interface error
             if (!('hid' in navigator)) {
                 if (this.onStatusChange) this.onStatusChange('error', 'WebHID API not supported in this browser.');
             }
@@ -66,48 +55,11 @@ export class NfcReader {
 
     async setupHid() {
         await this.device.open();
-        this.device.oninputreport = (e) => this.handleInputReport(e);
         if (this.onStatusChange) this.onStatusChange('connected', `HID: ${this.device.productName}`);
-        this.startPolling(); // Keep polling active to trigger card response
+        this.startFeaturePolling();
     }
 
-    handleInputReport(event) {
-        const { data } = event;
-        const hex = Array.from(new Uint8Array(data.buffer))
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('')
-            .toUpperCase();
-
-        console.log("HID-DATA:", hex);
-
-        // STABILITY FILTER:
-        // The noise (EC...) is extremely long (>100 chars).
-        // The Real UID is short (8-20 chars).
-        // We filter out anything > 32 chars to stop the UI spam.
-        if (hex.length >= 8 && hex.length <= 32) {
-            if (this.onScan) this.onScan(hex);
-        } else {
-            // Ignored long noise report
-        }
-    }
-
-    async setupUsb() {
-        await this.device.open();
-        await this.device.selectConfiguration(1);
-        await this.device.claimInterface(0);
-
-        // Command to enable Automatic PICC Polling (Standard for ACR122U)
-        // This is a professional touch to ensure the reader is "awake"
-        const enableAutoPoll = new Uint8Array([0x6b, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0x51, 0x7f, 0x00]);
-        try { await this.device.transferOut(2, enableAutoPoll); } catch (e) { }
-
-        if (this.onStatusChange) this.onStatusChange('connected', `USB: ${this.device.productName}`);
-        this.startPolling();
-    }
-
-    startPolling() {
-        // APDU: FF CA 00 00 00 (Get UID)
-        const getUidCmd = new Uint8Array([0xff, 0xca, 0x00, 0x00, 0x00]); // Standard APDU for HID wrap
+    startFeaturePolling() {
         let lastUid = null;
 
         this.pollingInterval = setInterval(async () => {
@@ -115,48 +67,54 @@ export class NfcReader {
             this._isProcessing = true;
 
             try {
-                if (this.type === 'hid') {
-                    // HID Polling
-                    try {
-                        // Some readers need Report ID 0, others need a specific one. 0 is common default.
-                        await this.device.sendReport(0, getUidCmd);
-                    } catch (e) {
-                        // console.log("HID Poll Error:", e); // Silent fail is common for some endpoints
-                    }
-                } else {
-                    // WebUSB Polling (Wrapped APDU for USB Mode)
-                    const usbCmd = new Uint8Array([0x6f, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xca, 0x00, 0x00, 0x00]);
-                    await this.device.transferOut(2, usbCmd);
-                    const res = await this.device.transferIn(1, 64);
+                // ACR122U Feature Report: Get UID Command
+                // Report ID 0x01, followed by APDU wrapper
+                const getUidFeature = new Uint8Array([
+                    0x6f, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0xff, 0xca, 0x00, 0x00, 0x04
+                ]);
 
-                    if (res.data.byteLength > 10) {
-                        const data = new Uint8Array(res.data.buffer);
-                        // Extract UID from wrapper response (ACR122U USB wrapper)
-                        const uid = Array.from(data.slice(10, data.length - 2))
-                            .map(b => b.toString(16).padStart(2, '0'))
-                            .join('')
-                            .toUpperCase();
+                // Send Feature Report (Report ID 0)
+                await this.device.sendFeatureReport(0, getUidFeature);
 
-                        this.handleUid(uid, lastUid, (newUid) => lastUid = newUid);
+                // Small delay to allow reader to process
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                // Receive Feature Report
+                const response = await this.device.receiveFeatureReport(0);
+                const data = new Uint8Array(response.buffer);
+
+                // Parse response
+                if (data.byteLength > 14) {
+                    // ACR122U returns: [header...] [UID bytes] [status bytes]
+                    // UID typically starts at offset 10-14
+                    const uidBytes = data.slice(10, data.byteLength - 2);
+                    const uid = Array.from(uidBytes)
+                        .map(b => b.toString(16).padStart(2, '0'))
+                        .join('')
+                        .toUpperCase();
+
+                    console.log("Feature Report UID:", uid);
+
+                    // Validate UID (should be 8-20 chars, not error code like 9000 or 6300)
+                    if (uid && uid.length >= 8 && uid.length <= 20 && uid !== '9000' && uid !== '6300') {
+                        if (uid !== lastUid) {
+                            lastUid = uid;
+                            if (this.onScan) this.onScan(uid);
+                            // Debounce for 3 seconds
+                            setTimeout(() => { if (lastUid === uid) lastUid = null; }, 3000);
+                        }
+                    } else {
+                        lastUid = null; // Card removed or error
                     }
                 }
             } catch (e) {
-                // Ignore transient polling errors
+                // No card present or reader busy - this is normal
+                lastUid = null;
             } finally {
                 this._isProcessing = false;
             }
-        }, 300); // Poll faster (300ms)
-    }
-
-    handleUid(uid, lastUid, updateLastUid) {
-        // Helper to validate and debounce UID
-        if (uid && uid.length >= 8 && uid !== '9000') {
-            if (uid !== lastUid) {
-                updateLastUid(uid);
-                if (this.onScan) this.onScan(uid);
-                setTimeout(() => { if (lastUid === uid) updateLastUid(null); }, 3000);
-            }
-        }
+        }, 500); // Poll every 500ms
     }
 
     async disconnect() {

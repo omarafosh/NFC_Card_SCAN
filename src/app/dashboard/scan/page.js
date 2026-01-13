@@ -480,7 +480,7 @@ export default function ScanPage() {
 
                     <button
                         onClick={handleConnectHwReader}
-                        title={hwStatus === 'connected' ? "Disconnect Hardware Reader" : "Connect Hardware Reader (v3.4 Silent Debug)"}
+                        title={hwStatus === 'connected' ? "Disconnect Hardware Reader" : "Connect Hardware Reader (v4.0 Feature Report)"}
                         className={`p-2.5 backdrop-blur-sm border rounded-xl transition-all min-w-[44px] min-h-[44px] flex items-center justify-center ${hwStatus === 'connected'
                             ? 'bg-blue-500/20 text-blue-400 border-blue-500/50'
                             : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-blue-400 hover:border-blue-500/50'

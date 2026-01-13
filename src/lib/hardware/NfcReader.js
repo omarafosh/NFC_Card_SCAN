@@ -21,22 +21,32 @@ export class NfcReader {
 
     async connect() {
         try {
-            // Priority 1: WebHID (Better stability for ACR122U on Chrome)
+            // Priority 1: WebHID (Recommended for Mac/Windows)
             if ('hid' in navigator) {
                 try {
+                    console.log('Requesting WebHID device...');
                     const devices = await navigator.hid.requestDevice({
                         filters: [{ vendorId: this.vendorId, productId: this.productId }]
                     });
+
                     if (devices.length > 0) {
                         this.device = devices[0];
                         this.type = 'hid';
                         await this.setupHid();
                         return true;
+                    } else {
+                        throw new Error("No device selected.");
                     }
-                } catch (e) { console.log('WebHID skip/fail:', e.message); }
+                } catch (e) {
+                    console.log('WebHID Error:', e);
+                    // If HID fails, do NOT fallback to WebUSB automatically, to avoid the crash loop.
+                    if (this.onStatusChange) this.onStatusChange('error', `HID Connection Failed: ${e.message}`);
+                    return false;
+                }
             }
 
-            // Priority 2: WebUSB (Often blocked by "protected interface" policy)
+            // WebUSB Temporarily Disabled to force HID debugging
+            /*
             if ('usb' in navigator) {
                 try {
                     const device = await navigator.usb.requestDevice({
@@ -55,6 +65,11 @@ export class NfcReader {
                         return false;
                     }
                 }
+            }
+            */
+
+            if (!('hid' in navigator)) {
+                if (this.onStatusChange) this.onStatusChange('error', 'WebHID API not supported in this browser.');
             }
 
             return false;

@@ -38,7 +38,7 @@ export async function GET() {
                 { data: chartData, error: chartError }
             ] = await Promise.all([
                 supabase.from('customers').select('*', { count: 'exact', head: true }),
-                supabase.from('customer_coupons').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
+                supabase.from('campaigns').select('*', { count: 'exact', head: true }).eq('is_active', true),
                 supabase.from('points_ledger').select('*', { count: 'exact', head: true }),
                 supabase.from('points_ledger')
                     .select(`id, points, reason, created_at, customers ( full_name )`)

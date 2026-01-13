@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { CreditCard, Wifi, WifiOff, Loader2, User, CheckCircle2, XCircle, Settings, Save, Delete, UserPlus, Zap, Receipt, Wallet, ArrowUpCircle, Gift, Percent, Store, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/lib/LanguageContext';
+import { NfcReader } from '@/lib/hardware/NfcReader';
 
 export default function ScanPage() {
     const { t, dir, language } = useLanguage();
@@ -24,6 +25,9 @@ export default function ScanPage() {
     const [retryKey, setRetryKey] = useState(0);
     const [flashEffect, setFlashEffect] = useState(null); // 'success', 'error', or null
     const [loading, setLoading] = useState(false);
+    const [hwStatus, setHwStatus] = useState('disconnected'); // 'disconnected', 'connected', 'error'
+    const [hwReader, setHwReader] = useState(null);
+    const nfcReaderRef = useRef(null);
     const currency = pageSettings?.currency_symbol || '$';
 
     const router = useRouter();
@@ -282,6 +286,43 @@ export default function ScanPage() {
         }
     };
 
+    const handleConnectHwReader = async () => {
+        if (!nfcReaderRef.current) {
+            nfcReaderRef.current = new NfcReader();
+            nfcReaderRef.current.onScan = (uid) => {
+                console.log(`[Hardware] Direct Scan: ${uid}`);
+                processScan(uid);
+            };
+            nfcReaderRef.current.onStatusChange = (status, info) => {
+                setHwStatus(status);
+                if (status === 'connected') {
+                    toast.success(`${t('connected')} - ${info}`);
+                } else if (status === 'error') {
+                    toast.error(`Hardware Error: ${info}`);
+                }
+            };
+        }
+
+        if (hwStatus === 'connected') {
+            await nfcReaderRef.current.disconnect();
+            setHwStatus('disconnected');
+        } else {
+            const success = await nfcReaderRef.current.connect();
+            if (success) {
+                console.log('[Hardware] Connected successfully');
+            }
+        }
+    };
+
+    // Cleanup Hardware on Unmount
+    useEffect(() => {
+        return () => {
+            if (nfcReaderRef.current) {
+                nfcReaderRef.current.disconnect();
+            }
+        };
+    }, []);
+
     const processScan = async (uid) => {
         console.log(`[processScan] START for UID: ${uid}`);
 
@@ -376,7 +417,6 @@ export default function ScanPage() {
 
     const resetScan = () => {
         setScanResult(null);
-        setAmount('');
         setShowDangerZone(false);
         processingRef.current = false;
     };
@@ -424,6 +464,17 @@ export default function ScanPage() {
                         className="p-2.5 bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-xl text-slate-400 hover:text-blue-400 hover:border-blue-500/50 transition-all min-w-[44px] min-h-[44px] flex items-center justify-center"
                     >
                         <Settings size={18} />
+                    </button>
+
+                    <button
+                        onClick={handleConnectHwReader}
+                        title={hwStatus === 'connected' ? "Disconnect Hardware Reader" : "Connect Hardware Reader (USB)"}
+                        className={`p-2.5 backdrop-blur-sm border rounded-xl transition-all min-w-[44px] min-h-[44px] flex items-center justify-center ${hwStatus === 'connected'
+                            ? 'bg-blue-500/20 text-blue-400 border-blue-500/50'
+                            : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-blue-400 hover:border-blue-500/50'
+                            }`}
+                    >
+                        <Wifi size={18} className={hwStatus === 'connected' ? 'animate-pulse' : ''} />
                     </button>
 
                     <div
@@ -631,13 +682,16 @@ export default function ScanPage() {
 function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campaignProgress, availableBundles, currency, onComplete, onRefresh, playSound, setFlashEffect, loading, setLoading }) {
     const { t, dir, language } = useLanguage();
     const [amount, setAmount] = useState('');
-    const [selectedCouponId, setSelectedCouponId] = useState(null);
+    const [selectedCouponGroup, setSelectedCouponGroup] = useState(null); // CHANGED: Track selected group
     const [manualAmount, setManualAmount] = useState('');
 
     // Top-up / Buy Package Modal
+    const [showPartialPayment, setShowPartialPayment] = useState(false);
+    const [partialAmount, setPartialAmount] = useState('');
     const [showStore, setShowStore] = useState(false);
-
     const customerCoupons = Array.isArray(coupons) ? coupons : [];
+
+
 
     // Filter valid coupons (Group by Campaign)
     const groupedCoupons = customerCoupons.reduce((acc, coupon) => {
@@ -650,6 +704,28 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
         return acc;
     }, {});
     const walletItems = Object.values(groupedCoupons);
+
+    // --- CALCULATIONS FOR PREVIEW ---
+    const billAmount = parseFloat(amount) || 0;
+
+    // Calculate expected discount based on selection
+    let discountAmount = 0;
+    let finalTotal = billAmount;
+    let selectedRewardConfig = null;
+
+    if (selectedCouponGroup) {
+        selectedRewardConfig = selectedCouponGroup.campaigns?.reward_config || {};
+        if (selectedRewardConfig.type === 'PERCENTAGE') {
+            discountAmount = billAmount * (selectedRewardConfig.value / 100);
+        } else {
+            // FIXED 
+            discountAmount = parseFloat(selectedRewardConfig.value || 0);
+        }
+        // Cap discount at bill amount (can't be negative)
+        if (discountAmount > billAmount) discountAmount = billAmount;
+
+        finalTotal = Math.max(0, billAmount - discountAmount);
+    }
 
     // Purchase Package Logic
     const handleBuyPackage = async (bundle) => {
@@ -680,7 +756,7 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
             if (res.ok) {
                 const data = await res.json();
                 toast.success(t('topup_success') || 'Package Purchased Successfully');
-                playSound('recharge'); // Added recharge sound
+                playSound('recharge');
                 setShowStore(false);
                 if (onRefresh) onRefresh();
                 else onComplete();
@@ -729,16 +805,20 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
         }
     };
 
-    // Pay from Wallet Balance (Monetary)
+    // Pay from Wallet Balance
     const handlePayFromWallet = async () => {
         const val = parseFloat(amount);
+        const bal = parseFloat(customer?.balance || 0);
+
         if (!val || val <= 0) {
             toast.error(t('error_invalid_amount'));
             return;
         }
 
-        if (parseFloat(customer?.balance || 0) < val) {
-            toast.error(t('insufficient_balance'));
+        // Logic Change: If balance is insufficient -> Open Partial Payment Modal
+        if (bal < val) {
+            setPartialAmount(bal.toFixed(2)); // Default to max available
+            setShowPartialPayment(true);
             return;
         }
 
@@ -752,7 +832,7 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
                 body: JSON.stringify({
                     customer_id: customer.id,
                     card_id: card.id,
-                    amount: val,
+                    amount: val, // Full amount
                     payment_method: 'WALLET',
                     is_topup: false
                 })
@@ -764,7 +844,7 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
                 setAmount('');
                 setFlashEffect('success');
                 setTimeout(() => setFlashEffect(null), 1000);
-                if (onRefresh) onRefresh();
+                if (onRefresh) await onRefresh();
             } else {
                 const err = await res.json();
                 toast.error(err.message || t('error_general'));
@@ -776,13 +856,74 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
         }
     };
 
-    // Use Coupon / Checkout Logic
-    // Use Coupon / Checkout Logic (Modified for Quick Use)
-    const handleUseCoupon = async (specificCouponId = null) => {
-        const couponId = specificCouponId || selectedCouponId;
-        if (!couponId) return;
-        setLoading(true);
+    // Execute Partial Payment
+    const handleMakePartialPayment = async () => {
+        const payVal = parseFloat(partialAmount);
+        const totalBill = parseFloat(amount);
+        const bal = parseFloat(customer?.balance || 0);
 
+        if (!payVal || payVal <= 0) {
+            toast.error(t('error_invalid_amount'));
+            return;
+        }
+        if (payVal > bal) {
+            toast.error(t('insufficient_balance'));
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await fetch('/api/transactions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customer_id: customer.id,
+                    card_id: card.id,
+                    amount: payVal, // ONLY deduct this part
+                    payment_method: 'WALLET',
+                    is_topup: false
+                })
+            });
+
+            if (res.ok) {
+                const remaining = totalBill - payVal;
+
+                // Playsound
+                playSound('success');
+
+                // Show Success Toast
+                toast.success(t('topup_success'), {
+                    description: remaining > 0
+                        ? `${t('remaining_cash') || 'Collect Cash'}: ${currency}${remaining.toFixed(2)}`
+                        : t('transaction_completed')
+                });
+
+                // Update UI: Amount becomes whatever is remaining
+                setAmount(remaining > 0 ? remaining.toFixed(2) : '');
+                setShowPartialPayment(false);
+                setFlashEffect('success');
+                setTimeout(() => setFlashEffect(null), 1000);
+
+                if (onRefresh) await onRefresh();
+            } else {
+                const err = await res.json();
+                toast.error(err.message || t('error_general'));
+            }
+        } catch (e) {
+            toast.error(t('network_error'));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // --- NEW: Execute Apply Selected Coupon
+    const handleConfirmPackageUse = async () => {
+        if (!selectedCouponGroup) return;
+
+        // Use the first ID from the grouped stack
+        const couponId = selectedCouponGroup.allIds[0];
+
+        setLoading(true);
         const val = parseFloat(amount) || 0;
 
         try {
@@ -801,54 +942,106 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
             if (res.ok) {
                 const data = await res.json();
                 playSound('success');
-                // Savings Celebration
+
+                // Show final savings
                 const amount_after = data.transaction?.amount_after_discount || 0;
-                const amount_before = data.transaction?.amount_before_discount || 0;
-                const savings = amount_before - amount_after;
-                const savingsMsg = t('saving_value').replace('{value}', `${currency}${savings > 0 ? savings.toFixed(2) : '0.00'}`);
-                toast.success(t('coupon_used') || 'Coupon Used Successfully!', {
-                    description: savingsMsg,
+                const savings = val - amount_after;
+
+                toast.success(t('coupon_used') || 'Package Applied Successfully!', {
+                    description: `${t('saving_value')}: ${currency}${savings.toFixed(2)}`,
                     duration: 5000,
                 });
 
-                // Visual Flash
                 setFlashEffect('success');
                 setTimeout(() => setFlashEffect(null), 1000);
 
-                if (onRefresh) onRefresh();
+                // Clear state
+                setSelectedCouponGroup(null);
+                setAmount('');
+
+                if (onRefresh) await onRefresh();
                 else onComplete();
             } else {
-                toast.error(t('coupon_use_failed') || 'Failed to use coupon');
+                toast.error(t('coupon_use_failed') || 'Failed to use package');
             }
-        } catch (e) { toast.error(t('network_error')); }
-        finally { setLoading(false); }
-    };
-
-    // Delete Coupon Logic
-    const handleDeleteCoupon = async (couponId, e) => {
-        e.stopPropagation(); // Prevent card selection
-        if (!confirm('هل أنت متأكد من حذف هذا الكوبون نهائياً؟')) return;
-
-        setLoading(true);
-        try {
-            const res = await fetch(`/api/coupons/${couponId}`, { method: 'DELETE' });
-            if (res.ok) {
-                toast.success(t('delete_success') || 'تم الحذف بنجاح');
-                if (onRefresh) onRefresh();
-                else onComplete();
-            } else {
-                toast.error(t('error_general') || 'فشل الحذف');
-            }
-        } catch (err) {
-            console.error(err);
-            toast.error(t('network_error') || 'خطأ في الاتصال');
+        } catch (e) {
+            toast.error(t('network_error'));
         } finally {
             setLoading(false);
         }
     };
 
+    // Toggle Selection
+    const handleSelectCoupon = (group) => {
+        if (selectedCouponGroup?.id === group.id) {
+            setSelectedCouponGroup(null); // Deselect
+        } else {
+            setSelectedCouponGroup(group);
+        }
+    };
+
     return (
         <div className="flex flex-col h-full relative">
+
+            {/* --- PARTIAL PAYMENT MODAL --- */}
+            {showPartialPayment && (
+                <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-md rounded-3xl p-6 flex flex-col justify-center animate-in fade-in zoom-in-95">
+                    <div className="w-full max-w-sm mx-auto bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 className="text-xl font-bold text-white">{t('pay_with_wallet') || 'Split Payment'}</h3>
+                                <p className="text-sm text-slate-400">{t('insufficient_balance') || 'Wallet Balance Split'}</p>
+                            </div>
+                            <button onClick={() => setShowPartialPayment(false)} className="text-slate-500 hover:text-white"><XCircle size={24} /></button>
+                        </div>
+
+                        <div className="space-y-4">
+                            {/* Info Rows */}
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">{t('bill_amount')}</span>
+                                <span className="font-mono font-bold text-white">{currency}{amount}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">{t('customer_wallet')}</span>
+                                <span className="font-mono font-bold text-emerald-400">{currency}{(customer?.balance || 0).toFixed(2)}</span>
+                            </div>
+
+                            <div className="h-px bg-slate-700/50 my-2" />
+
+                            {/* Input Area */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">{t('amount_to_pay_wallet') || 'Deduct from Wallet'}</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={partialAmount}
+                                        onChange={(e) => setPartialAmount(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-xl font-black text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
+                                    />
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">{currency}</span>
+                                </div>
+                            </div>
+
+                            {/* Remaining */}
+                            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 flex justify-between items-center">
+                                <span className="text-xs font-bold text-red-400">{t('remaining_cash') || 'Collect Cash'}</span>
+                                <span className="text-lg font-black text-red-500 font-mono">
+                                    {currency}{Math.max(0, (parseFloat(amount) - parseFloat(partialAmount || 0))).toFixed(2)}
+                                </span>
+                            </div>
+
+                            {/* Action */}
+                            <button
+                                onClick={handleMakePartialPayment}
+                                disabled={loading}
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-black text-base shadow-lg shadow-emerald-600/20 active:scale-95 transition-all mt-2"
+                            >
+                                {loading ? <Loader2 className="animate-spin mx-auto" /> : (t('confirm_payment') || 'Confirm Payment')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* --- TOP-UP STORE MODAL --- */}
             {showStore && (
@@ -956,31 +1149,68 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
                         <div className="h-10 w-px bg-slate-200/5 mt-auto mb-1 mx-1" />
 
                         <div className="flex items-end gap-4 h-full">
-                            {/* Pay Button - Same Height */}
-                            <button
-                                onClick={handlePayFromWallet}
-                                disabled={loading || !amount}
-                                data-type="wallet-pay"
-                                className="h-14 bg-[#75c4b1] hover:bg-[#65b4a1] text-white px-6 rounded-2xl font-black text-sm flex items-center gap-2 shadow-xl shadow-[#75c4b1]/20 transition-all active:scale-95 disabled:opacity-50"
-                            >
-                                <ArrowUpCircle size={18} />
-                                {t('pay_with_wallet')}
-                            </button>
+                            {/* PREVIEW MODE vs NORMAL MODE */}
+                            {!selectedCouponGroup ? (
+                                <>
+                                    <button
+                                        onClick={handlePayFromWallet}
+                                        disabled={loading || !amount}
+                                        data-type="wallet-pay"
+                                        className="h-14 bg-[#75c4b1] hover:bg-[#65b4a1] text-white px-6 rounded-2xl font-black text-sm flex items-center gap-2 shadow-xl shadow-[#75c4b1]/20 transition-all active:scale-95 disabled:opacity-50"
+                                    >
+                                        <ArrowUpCircle size={18} />
+                                        {t('pay_with_wallet')}
+                                    </button>
 
-                            {/* Bill Amount - Integrated Badge Style */}
-                            <div className="bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/50 rounded-2xl px-4 h-14 flex flex-col justify-center min-w-[150px] items-center relative group focus-within:ring-2 focus-within:ring-blue-500/40 transition-all">
-                                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em] mb-0.5 leading-none">{t('bill_amount')}</span>
-                                <div className="flex items-baseline justify-center gap-1 w-full">
-                                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase pt-1">{currency}</span>
-                                    <input
-                                        type="number"
-                                        placeholder="0.00"
-                                        value={amount}
-                                        onChange={(e) => setAmount(e.target.value)}
-                                        className="bg-transparent border-none text-2xl font-black text-slate-900 dark:text-white outline-none text-center placeholder:text-slate-300 dark:placeholder:text-slate-800 font-mono tracking-tighter w-24"
-                                    />
+                                    <div className="bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/50 rounded-2xl px-4 h-14 flex flex-col justify-center min-w-[150px] items-center relative group focus-within:ring-2 focus-within:ring-blue-500/40 transition-all">
+                                        <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em] mb-0.5 leading-none">{t('bill_amount')}</span>
+                                        <div className="flex items-baseline justify-center gap-1 w-full">
+                                            <span className="text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase pt-1">{currency}</span>
+                                            <input
+                                                type="number"
+                                                placeholder="0.00"
+                                                value={amount}
+                                                onChange={(e) => setAmount(e.target.value)}
+                                                className="bg-transparent border-none text-2xl font-black text-slate-900 dark:text-white outline-none text-center placeholder:text-slate-300 dark:placeholder:text-slate-800 font-mono tracking-tighter w-24"
+                                            />
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                /* TRANSACTION PREVIEW MODE */
+                                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-5">
+                                    <div className="flex flex-col gap-1 mr-2">
+                                        <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                                            <span>{currency}{billAmount.toFixed(0)}</span>
+                                            <span className="text-red-400">-{currency}{discountAmount.toFixed(0)}</span>
+                                        </div>
+                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                            {selectedCouponGroup.campaigns?.name}
+                                        </div>
+                                    </div>
+
+                                    {/* Big Confirm Button */}
+                                    <button
+                                        onClick={handleConfirmPackageUse}
+                                        disabled={loading}
+                                        className="h-14 bg-gradient-to-br from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white pl-6 pr-8 rounded-2xl font-black text-lg flex items-center gap-3 shadow-xl shadow-purple-600/30 transition-all active:scale-95 ring-2 ring-purple-500/50 ring-offset-2 ring-offset-slate-900"
+                                    >
+                                        <div className="flex flex-col items-start leading-none">
+                                            <span className="text-[9px] text-purple-200 font-bold uppercase tracking-wider">{t('confirm_payment') || 'CONFIRM'}</span>
+                                            <span>{currency}{finalTotal.toFixed(2)}</span>
+                                        </div>
+                                        <CheckCircle2 size={24} className="ml-2" />
+                                    </button>
+
+                                    {/* Cancel Selection */}
+                                    <button
+                                        onClick={() => setSelectedCouponGroup(null)}
+                                        className="h-14 w-14 rounded-2xl bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white flex items-center justify-center transition-all"
+                                    >
+                                        <XCircle size={24} />
+                                    </button>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
 
@@ -1030,35 +1260,49 @@ function CheckoutForm({ customer, card, rewards, coupons, manualCampaigns, campa
                             <div className="flex flex-wrap gap-4">
                                 {walletItems.map(group => {
                                     const reward = group.campaigns?.reward_config || {};
-                                    const activeId = group.allIds[0];
+                                    // const activeId = group.allIds[0]; // Not used directly in loop anymore
+                                    const isSelected = selectedCouponGroup?.id === group.id;
 
                                     return (
                                         <button
                                             key={group.id}
-                                            onClick={() => handleUseCoupon(activeId)}
+                                            onClick={() => handleSelectCoupon(group)}
                                             disabled={loading}
-                                            className="relative group bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 hover:border-purple-500 p-2.5 rounded-2xl flex flex-col items-center justify-center min-w-[90px] h-20 transition-all hover:scale-[1.05] active:scale-95 shadow-xl disabled:opacity-50"
+                                            className={`relative group border p-2.5 rounded-2xl flex flex-col items-center justify-center min-w-[90px] h-20 transition-all shadow-xl disabled:opacity-50
+                                                ${isSelected
+                                                    ? 'bg-purple-600 border-purple-400 scale-105 ring-4 ring-purple-500/20'
+                                                    : 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700 hover:border-purple-500 hover:scale-[1.05] active:scale-95'
+                                                }
+                                            `}
                                         >
                                             {/* Price Badge - Subtle Left Top */}
                                             {group.campaigns?.price > 0 && (
-                                                <div className="absolute -top-1.5 -left-1.5 bg-slate-700 text-slate-300 rounded-md border border-slate-600 shadow-sm z-10 group-hover:bg-slate-600 transition-colors flex items-baseline px-1.5 py-0.5 gap-0.5">
+                                                <div className={`absolute -top-1.5 -left-1.5 rounded-md border shadow-sm z-10 transition-colors flex items-baseline px-1.5 py-0.5 gap-0.5 
+                                                    ${isSelected ? 'bg-purple-700 border-purple-500 text-purple-100' : 'bg-slate-700 text-slate-300 border-slate-600 group-hover:bg-slate-600'}
+                                                `}>
                                                     <span className="text-[7px] font-bold opacity-70 uppercase">{currency}</span>
-                                                    <span className="text-[10px] font-black text-white leading-none">{group.campaigns.price}</span>
+                                                    <span className="text-[10px] font-black leading-none">{group.campaigns.price}</span>
                                                 </div>
                                             )}
 
-                                            <div className="absolute -top-1.5 -right-1.5 bg-gradient-to-br from-purple-500 to-purple-700 text-white text-[10px] font-black h-5 w-5 rounded-full flex items-center justify-center border-2 border-slate-900 shadow-lg z-10">
+                                            <div className={`absolute -top-1.5 -right-1.5 text-[10px] font-black h-5 w-5 rounded-full flex items-center justify-center border-2 shadow-lg z-10 
+                                                ${isSelected ? 'bg-white text-purple-600 border-purple-500' : 'bg-gradient-to-br from-purple-500 to-purple-700 text-white border-slate-900'}
+                                            `}>
                                                 {group.count}
                                             </div>
 
                                             {reward.type === 'PERCENTAGE' && (
-                                                <span className="text-xl font-black text-white mb-0 group-hover:text-purple-400 transition-colors">{reward.value}%</span>
+                                                <span className={`text-xl font-black mb-0 transition-colors ${isSelected ? 'text-white' : 'text-white group-hover:text-purple-400'}`}>
+                                                    {reward.value}%
+                                                </span>
                                             )}
-                                            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter text-center line-clamp-1 leading-none group-hover:text-purple-400/70 transition-colors mt-0.5">
+                                            <span className={`text-[10px] font-black uppercase tracking-tighter text-center line-clamp-1 leading-none transition-colors mt-0.5
+                                                ${isSelected ? 'text-purple-200' : 'text-slate-400 dark:text-slate-500 group-hover:text-purple-400/70'}
+                                            `}>
                                                 {group.campaigns?.name}
                                             </span>
 
-                                            <div className="absolute inset-0 bg-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />
+                                            {!isSelected && <div className="absolute inset-0 bg-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />}
                                         </button>
                                     );
                                 })}

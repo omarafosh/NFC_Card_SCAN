@@ -214,10 +214,16 @@ export async function POST(request) {
 
         // 4. Mark Coupon as USED (if applicable)
         if (coupon_id) {
-            await supabase
+            const { error: updateErr } = await supabaseAdmin
                 .from('customer_coupons')
                 .update({ status: 'USED', used_at: new Date().toISOString() })
                 .eq('id', coupon_id);
+
+            if (updateErr) {
+                console.error('CRITICAL: Failed to mark coupon as USED:', updateErr);
+                // We don't throw here to avoid rolling back the transaction, but we log it.
+                // Ideally this should be consistent.
+            }
         }
 
         // 5. Campaign Engine: Check for AUTO_SPEND Rewards

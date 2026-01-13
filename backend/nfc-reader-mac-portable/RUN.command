@@ -38,7 +38,7 @@ echo "🚀 Starting NFC Reader..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-"$NODE_RUNTIME" "$APP_JS"
+"$NODE_RUNTIME" "$APP_BUNDLE"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

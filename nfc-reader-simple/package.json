@@ -18,7 +18,9 @@
     },
     "pkg": {
         "assets": [
-            "node_modules/@pokusew/pcsclite/build/Release/pcsclite.node"
+            "node_modules/@pokusew/pcsclite/build/Release/*.node",
+            "node_modules/@pokusew/pcsclite/lib/binding/**/*.node",
+            "node_modules/node-notifier/vendor/**/*"
         ]
     }
 }

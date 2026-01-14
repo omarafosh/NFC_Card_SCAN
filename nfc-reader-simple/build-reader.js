@@ -104,7 +104,8 @@ try {
 
     // Command to run pkg
     // We use npx to run it from local modules
-    execSync(`npx pkg ${TEMP_BUILD_FILE} --targets ${target} --out-path ${OUTPUT_DIR}`, {
+    // We use --config package.json to ensure assets are included
+    execSync(`npx pkg ${TEMP_BUILD_FILE} --config package.json --targets ${target} --out-path ${OUTPUT_DIR}`, {
         stdio: 'inherit'
     });
 

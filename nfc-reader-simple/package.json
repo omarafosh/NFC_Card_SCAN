@@ -15,5 +15,10 @@
         "dotenv": "^17.2.3",
         "javascript-obfuscator": "^5.1.0",
         "pkg": "^5.8.1"
+    },
+    "pkg": {
+        "assets": [
+            "node_modules/@pokusew/pcsclite/build/Release/pcsclite.node"
+        ]
     }
 }

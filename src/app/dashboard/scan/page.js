@@ -17,6 +17,8 @@ export default function ScanPage() {
     const [showSettings, setShowSettings] = useState(false);
     const [showDangerZone, setShowDangerZone] = useState(false);
     const [pageSettings, setPageSettings] = useState({ currency_symbol: '$' });
+    const [manualUid, setManualUid] = useState('');
+    const [showManualInput, setShowManualInput] = useState(false);
 
     const [branches, setBranches] = useState([]);
     const [terminals, setTerminals] = useState([]);
@@ -522,6 +524,14 @@ export default function ScanPage() {
         }
     };
 
+    const handleManualScan = () => {
+        if (manualUid.trim()) {
+            processScan(manualUid.trim().toUpperCase());
+            setManualUid('');
+            setShowManualInput(false);
+        }
+    };
+
     return (
         <div className="h-[calc(100vh-120px)] max-w-7xl mx-auto relative antialiased flex flex-col" suppressHydrationWarning>
             {/* Full-screen Flash Overlay */}
@@ -542,6 +552,43 @@ export default function ScanPage() {
                         <span className="ms-2 text-xs font-bold">{selectedTerminal ? terminals.find(t => t.id.toString() === selectedTerminal)?.name : t('tabs_terminals')}</span>
                     </button>
 
+                    <div className="flex items-center gap-2">
+                        {showManualInput ? (
+                            <div className="flex gap-2 animate-in slide-in-from-left-2 duration-200">
+                                <input
+                                    type="text"
+                                    value={manualUid}
+                                    onChange={(e) => setManualUid(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleManualScan()}
+                                    placeholder={t('enter_uid')}
+                                    autoFocus
+                                    className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2 text-xs font-mono text-white outline-none focus:border-blue-500/50 w-32"
+                                />
+                                <button
+                                    onClick={handleManualScan}
+                                    className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all px-3"
+                                >
+                                    <CheckCircle2 size={16} />
+                                </button>
+                                <button
+                                    onClick={() => setShowManualInput(false)}
+                                    className="p-2 bg-slate-800/50 text-slate-400 hover:text-red-400 rounded-xl transition-all"
+                                >
+                                    <XCircle size={16} />
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => setShowManualInput(true)}
+                                title={t('manual_scan')}
+                                className="p-2.5 bg-slate-800/50 border border-slate-700/50 text-slate-400 hover:text-blue-400 hover:border-blue-500/50 backdrop-blur-sm rounded-xl transition-all flex items-center gap-2"
+                            >
+                                <Zap size={18} />
+                                <span className="text-xs font-bold hidden sm:inline">{t('manual_scan')}</span>
+                            </button>
+                        )}
+                    </div>
+
                     {status === 'error' && (
                         <button
                             onClick={() => setRetryKey(k => k + 1)}
@@ -555,72 +602,74 @@ export default function ScanPage() {
             </div>
 
             {/* Connection Settings */}
-            {showSettings && (
-                <div className="absolute top-14 start-0 z-50 w-80 bg-slate-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-700/50 p-5 animate-in slide-in-from-top-2 duration-200" role="dialog" aria-label={t('reader_settings')}>
-                    <h3 className="font-bold text-white mb-4">{t('reader_settings')}</h3>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('terminal_branch')}</label>
-                            <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
-                                {branches.map(b => (
-                                    <button
-                                        key={b.id}
-                                        onClick={() => {
-                                            setSelectedBranch(b.id.toString());
-                                            setSelectedTerminal('');
-                                        }}
-                                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all ${selectedBranch === b.id.toString() ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-900/50 text-slate-300 hover:bg-slate-900'}`}
-                                    >
-                                        <span className="font-bold">{b.name}</span>
-                                        {selectedBranch === b.id.toString() && <CheckCircle2 size={14} />}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {selectedBranch && (
-                            <div className="animate-in fade-in slide-in-from-top-2">
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('tabs_terminals')}</label>
-                                <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
-                                    {terminals.map(terminal => {
-                                        const lastSeen = terminalActivity[terminal.id];
-                                        const isOnline = lastSeen && (new Date() - new Date(lastSeen)) < 2 * 60 * 1000;
-                                        return (
-                                            <button
-                                                key={terminal.id}
-                                                onClick={() => {
-                                                    handleTerminalSelect(terminal.id.toString());
-                                                    setShowSettings(false);
-                                                }}
-                                                className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-all group ${selectedTerminal === terminal.id.toString() ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-900/50 text-slate-300 hover:bg-slate-900 border border-transparent hover:border-slate-700'}`}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-600'}`} />
-                                                    <div className="flex flex-col items-start">
-                                                        <span className="font-bold">{terminal.name}</span>
-                                                        <span className="text-[9px] opacity-60 font-mono">ID: {terminal.id}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`text-[10px] font-black uppercase tracking-wider ${isOnline ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                                        {isOnline ? t('online') || 'متصل' : t('offline') || 'غير متصل'}
-                                                    </span>
-                                                    {selectedTerminal === terminal.id.toString() && <CheckCircle2 size={14} />}
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                    {terminals.length === 0 && (
-                                        <div className="p-4 text-center text-slate-500 text-xs italic">
-                                            {t('no_data')}
-                                        </div>
-                                    )}
+            {
+                showSettings && (
+                    <div className="absolute top-14 start-0 z-50 w-80 bg-slate-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-700/50 p-5 animate-in slide-in-from-top-2 duration-200" role="dialog" aria-label={t('reader_settings')}>
+                        <h3 className="font-bold text-white mb-4">{t('reader_settings')}</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('terminal_branch')}</label>
+                                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                                    {branches.map(b => (
+                                        <button
+                                            key={b.id}
+                                            onClick={() => {
+                                                setSelectedBranch(b.id.toString());
+                                                setSelectedTerminal('');
+                                            }}
+                                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all ${selectedBranch === b.id.toString() ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-900/50 text-slate-300 hover:bg-slate-900'}`}
+                                        >
+                                            <span className="font-bold">{b.name}</span>
+                                            {selectedBranch === b.id.toString() && <CheckCircle2 size={14} />}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
-                        )}
+
+                            {selectedBranch && (
+                                <div className="animate-in fade-in slide-in-from-top-2">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('tabs_terminals')}</label>
+                                    <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                                        {terminals.map(terminal => {
+                                            const lastSeen = terminalActivity[terminal.id];
+                                            const isOnline = lastSeen && (new Date() - new Date(lastSeen)) < 2 * 60 * 1000;
+                                            return (
+                                                <button
+                                                    key={terminal.id}
+                                                    onClick={() => {
+                                                        handleTerminalSelect(terminal.id.toString());
+                                                        setShowSettings(false);
+                                                    }}
+                                                    className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-all group ${selectedTerminal === terminal.id.toString() ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-900/50 text-slate-300 hover:bg-slate-900 border border-transparent hover:border-slate-700'}`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-600'}`} />
+                                                        <div className="flex flex-col items-start">
+                                                            <span className="font-bold">{terminal.name}</span>
+                                                            <span className="text-[9px] opacity-60 font-mono">ID: {terminal.id}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-[10px] font-black uppercase tracking-wider ${isOnline ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                                            {isOnline ? t('online') || 'متصل' : t('offline') || 'غير متصل'}
+                                                        </span>
+                                                        {selectedTerminal === terminal.id.toString() && <CheckCircle2 size={14} />}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                        {terminals.length === 0 && (
+                                            <div className="p-4 text-center text-slate-500 text-xs italic">
+                                                {t('no_data')}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Main Content Area - Fixed Height */}
             <div className="flex-1 flex flex-col min-h-0">
@@ -693,8 +742,8 @@ export default function ScanPage() {
 
                                                     return (
                                                         <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 shadow-sm transition-all ${isExpired ? 'bg-red-500/10 text-red-500 border-red-500/30 animate-pulse' :
-                                                                isLow ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' :
-                                                                    'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                            isLow ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' :
+                                                                'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                                                             }`}>
                                                             {isLow && <Zap size={10} className="fill-current animate-bounce" />}
                                                             <div className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-red-500' : isLow ? 'bg-amber-500' : 'bg-emerald-500'}`} />
@@ -782,7 +831,7 @@ export default function ScanPage() {
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 }
 

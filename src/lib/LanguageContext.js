@@ -278,6 +278,14 @@ export const translations = {
         restore_error: 'فشل الاستعادة',
         confirm_delete: 'هل أنت متأكد من الحذف؟',
         topup_success: 'تمت عملية الشحن بنجاح',
+        register_new_customer: 'تسجيل عميل جديد',
+        valid_from: 'تاريخ البدء',
+        days_remaining: 'يوم متبقي',
+        card_expired: 'البطاقة منتهية',
+        expiry_warning_days: 'أيام تنبيه انتهاء البطاقة',
+        expiry_warning_desc: 'عدد الأيام قبل انتهاء البطاقة ليظهر تنبيه التحذير',
+        manual_scan: 'مسح يدوي',
+        enter_uid: 'أدخل رقم البطاقة'
     },
     en: {
         // Sidebar & Navigation
@@ -550,6 +558,14 @@ export const translations = {
         restore_error: 'Restore failed',
         confirm_delete: 'Are you sure you want to delete?',
         topup_success: 'Top-up successful',
+        register_new_customer: 'Register New Customer',
+        valid_from: 'Valid From',
+        days_remaining: 'Days Remaining',
+        card_expired: 'Card Expired',
+        expiry_warning_days: 'Expiry Warning Days',
+        expiry_warning_desc: 'Number of days before expiry to show warning',
+        manual_scan: 'Manual Scan',
+        enter_uid: 'Enter Card UID'
     }
 };
 

@@ -8,6 +8,8 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const notifier = require('node-notifier');
 const readline = require('readline');
+const fs = require('fs');
+const path = require('path');
 
 // --- Helper: Keep Window Open ---
 function waitToExit(code = 0) {
@@ -45,11 +47,43 @@ async function main() {
         // Configuration from .env (or injected by build)
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-        const TERMINAL_ID = process.env.TERMINAL_ID;
+        const DEFAULT_TERMINAL_ID = process.env.TERMINAL_ID;
 
-        if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !TERMINAL_ID) {
-            console.error('❌ Error: Missing configuration!');
-            console.error('Please ensure the application was built correctly with secrets.');
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+            console.error('❌ Error: Missing configuration (Supabase URL/Key)!');
+            waitToExit(1);
+            return;
+        }
+
+        // --- Dynamic Terminal Config ---
+        const configPath = path.join(process.cwd(), 'config-terminal.json');
+        let terminalId = DEFAULT_TERMINAL_ID;
+
+        if (fs.existsSync(configPath)) {
+            try {
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                if (config.terminal_id) {
+                    terminalId = config.terminal_id;
+                    console.log(`📝 Using Terminal ID from config: ${terminalId}`);
+                }
+            } catch (e) {
+                console.warn('⚠️  Could not read config-terminal.json, using default.');
+            }
+        } else {
+            // Create default config file
+            try {
+                fs.writeFileSync(configPath, JSON.stringify({
+                    terminal_id: parseInt(DEFAULT_TERMINAL_ID) || 0,
+                    _comment: "You can change terminal_id here and restart the app"
+                }, null, 4));
+                console.log(`📄 Created default config: ${configPath}`);
+            } catch (e) {
+                console.warn('⚠️  Could not create config-terminal.json');
+            }
+        }
+
+        if (!terminalId) {
+            console.error('❌ Error: Terminal ID not found in config or build!');
             waitToExit(1);
             return;
         }
@@ -57,10 +91,10 @@ async function main() {
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
         console.log('╔════════════════════════════════════════╗');
-        console.log('║   Remote NFC Reader v2.1 (Robust)     ║');
+        console.log('║   Remote NFC Reader v2.2 (Dynamic)    ║');
         console.log('╚════════════════════════════════════════╝');
         console.log('');
-        console.log(`📡 Terminal ID: ${TERMINAL_ID}`);
+        console.log(`📡 Terminal ID: ${terminalId}`);
         console.log(`🗄️  Database: Checking connection...`);
 
         // Verify DB Connection
@@ -107,7 +141,7 @@ async function main() {
                         .from('scan_events')
                         .insert({
                             uid,
-                            terminal_id: parseInt(TERMINAL_ID)
+                            terminal_id: parseInt(terminalId)
                         });
 
                     if (scanError) {

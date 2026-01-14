@@ -38,7 +38,10 @@ export async function GET() {
                 { data: chartData, error: chartError }
             ] = await Promise.all([
                 supabase.from('customers').select('*', { count: 'exact', head: true }),
-                supabase.from('campaigns').select('*', { count: 'exact', head: true }).eq('is_active', true),
+                supabase.from('customer_coupons')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('status', 'ACTIVE')
+                    .or(`expires_at.is.null,expires_at.gte.${new Date().toISOString()}`),
                 supabase.from('points_ledger').select('*', { count: 'exact', head: true }),
                 supabase.from('points_ledger')
                     .select(`id, points, reason, created_at, customers ( full_name )`)
@@ -63,7 +66,7 @@ export async function GET() {
 
             stats = {
                 totalCustomers: totalCustomers || 0,
-                totalPoints: totalPackages || 0,
+                totalPoints: totalPackages || 0, // Now represents count of active coupons
                 totalTransactions: totalTransactions || 0,
                 recentActivity: recentActivity || [],
                 chartData: Object.entries(days).map(([date, count]) => ({

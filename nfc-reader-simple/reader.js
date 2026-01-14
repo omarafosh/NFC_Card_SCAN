@@ -107,10 +107,7 @@ async function main() {
                         .from('scan_events')
                         .insert({
                             uid,
-                            customer_id: cardData?.customer_id || null,
-                            terminal_id: parseInt(TERMINAL_ID),
-                            status: cardData ? 'success' : 'unknown_card',
-                            scanned_at: new Date().toISOString()
+                            terminal_id: parseInt(TERMINAL_ID)
                         });
 
                     if (scanError) {

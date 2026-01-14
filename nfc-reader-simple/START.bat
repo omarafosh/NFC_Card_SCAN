@@ -2,7 +2,7 @@
 REM Simple NFC Reader Launcher for Windows
 REM Double-click this file to start the reader
 
-cd /d "%~dp0"
+
 
 echo ╔════════════════════════════════════════╗
 echo ║   NFC Reader Setup                     ║

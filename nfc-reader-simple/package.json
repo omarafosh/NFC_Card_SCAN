@@ -7,9 +7,13 @@
         "start": "node reader.js"
     },
     "dependencies": {
+        "@supabase/supabase-js": "^2.39.0",
         "nfc-pcsc": "^0.8.1",
-        "dotenv": "^16.0.3",
-        "node-notifier": "^10.0.1",
-        "@supabase/supabase-js": "^2.39.0"
+        "node-notifier": "^10.0.1"
+    },
+    "devDependencies": {
+        "dotenv": "^17.2.3",
+        "javascript-obfuscator": "^5.1.0",
+        "pkg": "^5.8.1"
     }
 }

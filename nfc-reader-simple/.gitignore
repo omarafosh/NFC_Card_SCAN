@@ -8,4 +8,7 @@ node_modules/
 *.log
 
 # macOS
-.DS_Store
+
+# Build artifacts
+dist/
+reader-build.js

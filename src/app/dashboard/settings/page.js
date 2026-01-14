@@ -20,7 +20,8 @@ export default function SettingsPage() {
         enable_sounds: 'true',
         toast_duration: '3000',
         logo_url: '',
-        maintenance_mode: 'false'
+        maintenance_mode: 'false',
+        expiry_warning_days: '7'
     });
     const [currentUser, setCurrentUser] = useState(null);
 
@@ -208,15 +209,19 @@ export default function SettingsPage() {
                                     </div>
                                     <div>
                                         <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">
-                                            {t('toast_duration')}
+                                            {t('expiry_warning_days') || 'أيام تنبيه انتهاء البطاقة'}
                                         </label>
                                         <input
                                             type="number"
-                                            name="toast_duration"
-                                            value={settings.toast_duration}
+                                            name="expiry_warning_days"
+                                            value={settings.expiry_warning_days}
                                             onChange={handleChange}
                                             className="w-full bg-gray-50 dark:bg-slate-950 border-none rounded-2xl p-4 text-gray-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                                            placeholder="7"
                                         />
+                                        <p className="text-[10px] text-gray-400 mt-1">
+                                            {t('expiry_warning_desc') || 'عدد الأيام قبل انتهاء البطاقة ليظهر تنبيه التحذير'}
+                                        </p>
                                     </div>
                                 </div>
                             </div>

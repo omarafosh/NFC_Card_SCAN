@@ -79,7 +79,8 @@ export async function POST(request) {
                     uid,
                     customer_id: customer_id || null,
                     is_active: true,
-                    expires_at: finalExpiresAt
+                    expires_at: finalExpiresAt,
+                    valid_from: body.valid_from || new Date().toISOString()
                 }
             ])
             .select()

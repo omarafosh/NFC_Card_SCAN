@@ -10,14 +10,15 @@ export async function PUT(request, { params }) {
 
     try {
         const body = await request.json();
-        const { customer_id, is_active, expires_at } = body;
+        const { customer_id, is_active, expires_at, valid_from } = body;
 
         const { error } = await supabase
             .from('cards')
             .update({
                 customer_id: customer_id || null,
                 is_active,
-                expires_at: expires_at || null
+                expires_at: expires_at || null,
+                valid_from: valid_from || null
             })
             .eq('id', id);
 

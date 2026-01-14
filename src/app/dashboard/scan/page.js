@@ -687,13 +687,14 @@ export default function ScanPage() {
                                                 {(() => {
                                                     if (!scanResult.card.expires_at) return null;
                                                     const daysLeft = Math.ceil((new Date(scanResult.card.expires_at) - new Date()) / (1000 * 60 * 60 * 24));
-                                                    const isLow = daysLeft <= 7;
+                                                    const warningDays = parseInt(pageSettings.expiry_warning_days || '7');
+                                                    const isLow = daysLeft <= warningDays;
                                                     const isExpired = daysLeft <= 0;
 
                                                     return (
                                                         <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 shadow-sm transition-all ${isExpired ? 'bg-red-500/10 text-red-500 border-red-500/30 animate-pulse' :
-                                                            isLow ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' :
-                                                                'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                                isLow ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' :
+                                                                    'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                                                             }`}>
                                                             {isLow && <Zap size={10} className="fill-current animate-bounce" />}
                                                             <div className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-red-500' : isLow ? 'bg-amber-500' : 'bg-emerald-500'}`} />

@@ -131,13 +131,23 @@ export default function CardsPage() {
             )
         },
         {
+            header: t('valid_from') || 'Valid From',
+            accessor: 'valid_from',
+            cell: (row) => row.valid_from ? (
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400">
+                    {new Date(row.valid_from).toLocaleDateString()}
+                </span>
+            ) : <span className="text-gray-400">-</span>
+        },
+        {
             header: t('expires_at') || 'Expires At',
             accessor: 'expires_at',
             cell: (row) => {
                 if (!row.expires_at) return <span className="text-gray-400">-</span>;
                 const date = new Date(row.expires_at);
                 const isExpired = date < new Date();
-                const isSoon = date < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+                const warningDays = 7; // We could fetch settings here but usually columns are static
+                const isSoon = date < new Date(Date.now() + warningDays * 24 * 60 * 60 * 1000);
                 return (
                     <span className={`text-xs font-bold ${isExpired ? 'text-red-500' : isSoon ? 'text-yellow-500' : 'text-gray-600 dark:text-gray-400'}`}>
                         {date.toLocaleDateString()}
@@ -168,6 +178,7 @@ export default function CardsPage() {
                                         uid: row.uid,
                                         customer_id: row.customer_id || '',
                                         expires_at: row.expires_at ? new Date(row.expires_at).toISOString().split('T')[0] : '',
+                                        valid_from: row.valid_from ? new Date(row.valid_from).toISOString().split('T')[0] : '',
                                         is_active: row.is_active
                                     });
                                     setShowModal(true);

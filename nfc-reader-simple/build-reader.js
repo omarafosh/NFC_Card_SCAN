@@ -84,11 +84,11 @@ try {
             console.warn('⚠️  Rebuild warning:', e.message);
         }
     } else if (platform === 'darwin') {
-        target = 'node18-macos-x64';
-        console.log('🍎 MacOS detected. Rebuilding native modules for Node 18...');
+        const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+        target = `node18-macos-${arch}`;
+        console.log(`🍎 MacOS (${arch}) detected. Rebuilding native modules for Node 18...`);
         try {
-            // For Mac, we often don't need explicit rebuild flags if running on x64 runner for x64 target
-            execSync('npm rebuild --target=18.5.0 --runtime=node', { stdio: 'inherit' });
+            execSync(`npm rebuild --target=18.5.0 --runtime=node --arch=${arch}`, { stdio: 'inherit' });
         } catch (e) {
             console.warn('⚠️  Rebuild warning:', e.message);
         }

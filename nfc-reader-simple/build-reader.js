@@ -72,19 +72,39 @@ fs.writeFileSync(TEMP_BUILD_FILE, finalCode);
 console.log('📦 Packaging executables (this may take a while)...');
 try {
     // Determine targets
-    const targets = 'node18-win-x64';
+    const platform = process.platform;
+    let target = '';
 
-    // REBUILD Step: Force native modules to compile for Node 18 (used by pkg)
-    console.log('🛠️  Rebuilding native modules for Node 18...');
-    try {
-        execSync('npm rebuild --target=18.5.0 --runtime=node --arch=x64', { stdio: 'inherit' });
-    } catch (e) {
-        console.warn('⚠️  Rebuild warning (might be okay if prebuilds exist):', e.message);
+    if (platform === 'win32') {
+        target = 'node18-win-x64';
+        console.log('🛠️  Windows detected. Rebuilding native modules for Node 18...');
+        try {
+            execSync('npm rebuild --target=18.5.0 --runtime=node --arch=x64', { stdio: 'inherit' });
+        } catch (e) {
+            console.warn('⚠️  Rebuild warning:', e.message);
+        }
+    } else if (platform === 'darwin') {
+        target = 'node18-macos-x64';
+        console.log('🍎 MacOS detected. Rebuilding native modules for Node 18...');
+        try {
+            // For Mac, we often don't need explicit rebuild flags if running on x64 runner for x64 target
+            execSync('npm rebuild --target=18.5.0 --runtime=node', { stdio: 'inherit' });
+        } catch (e) {
+            console.warn('⚠️  Rebuild warning:', e.message);
+        }
+    } else {
+        console.log('🐧 Linux/Other detected. Using standard Node 18 target...');
+        target = 'node18-linux-x64';
+        try {
+            execSync('npm rebuild --target=18.5.0 --runtime=node', { stdio: 'inherit' });
+        } catch (e) {
+            console.warn('⚠️  Rebuild warning:', e.message);
+        }
     }
 
     // Command to run pkg
     // We use npx to run it from local modules
-    execSync(`npx pkg ${TEMP_BUILD_FILE} --targets ${targets} --out-path ${OUTPUT_DIR}`, {
+    execSync(`npx pkg ${TEMP_BUILD_FILE} --targets ${target} --out-path ${OUTPUT_DIR}`, {
         stdio: 'inherit'
     });
 

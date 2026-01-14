@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CreditCard, Wifi, WifiOff, Loader2, User, CheckCircle2, XCircle, Settings, Save, Delete, UserPlus, Zap, Receipt, Wallet, ArrowUpCircle, Gift, Percent, Store, Trash2 } from 'lucide-react';
+import { CreditCard, Loader2, User, CheckCircle2, XCircle, Settings, Save, Delete, UserPlus, Zap, Receipt, Wallet, ArrowUpCircle, Gift, Percent, Store, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/lib/LanguageContext';
 import { NfcReader } from '@/lib/hardware/NfcReader';
@@ -71,7 +71,12 @@ export default function ScanPage() {
 
         fetch('/api/settings')
             .then(res => res.json())
-            .then(data => setPageSettings(data.data || { currency_symbol: '$' }))
+            .then(data => {
+                const settings = data.data || { currency_symbol: '$' };
+                setPageSettings(settings);
+                // Optionally set global toast options if needed, 
+                // but since we use sonner, we can pass duration to individual calls or use a helper.
+            })
             .catch(err => console.error('Failed to load settings', err));
 
         fetch('/api/branches')
@@ -79,6 +84,8 @@ export default function ScanPage() {
             .then(data => setBranches(data.data || []))
             .catch(err => console.error('Failed to load branches', err));
     }, []);
+
+    const [terminalActivity, setTerminalActivity] = useState({});
 
     // Load Terminals when Branch changes
     useEffect(() => {
@@ -88,11 +95,56 @@ export default function ScanPage() {
         }
         fetch(`/api/terminals?branch_id=${selectedBranch}`)
             .then(res => res.json())
-            .then(data => setTerminals(data.data || []))
+            .then(data => {
+                const fetchedTerminals = data.data || [];
+                setTerminals(fetchedTerminals);
+
+                // Initialize activity state
+                const activityMap = {};
+                fetchedTerminals.forEach(t => {
+                    if (t.last_activity) activityMap[t.id] = t.last_activity;
+                });
+                setTerminalActivity(activityMap);
+            })
             .catch(err => console.error('Failed to load terminals', err));
     }, [selectedBranch]);
 
-    // Supabase Realtime Subscription
+    // Realtime Global Terminal Status for the Branch
+    useEffect(() => {
+        if (!selectedBranch) return;
+
+        console.log(`[Realtime-Status] Monitoring all terminals in Branch: ${selectedBranch}`);
+
+        const channel = supabase
+            .channel(`branch-status-${selectedBranch}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'scan_events'
+                },
+                (payload) => {
+                    const { terminal_id, created_at } = payload.new;
+                    // Check if this terminal belongs to our currently loaded terminals
+                    if (terminals.some(t => t.id === terminal_id)) {
+                        console.log(`[Realtime-Status] Activity detected for Terminal ${terminal_id}`);
+                        setTerminalActivity(prev => ({
+                            ...prev,
+                            [terminal_id]: created_at || new Date().toISOString()
+                        }));
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+            supabase.removeChannel(channel);
+        };
+    }, [selectedBranch, terminals]);
+
+    // Supabase Realtime Subscription for Selected Terminal (Existing Logic)
     useEffect(() => {
         if (!selectedTerminal) return;
 
@@ -113,6 +165,13 @@ export default function ScanPage() {
                     console.log('[Realtime] Scan event received:', payload);
                     const uid = payload.new ? payload.new.uid : null;
                     const eventId = payload.new ? payload.new.id : 'unknown';
+                    const eventStatus = payload.new ? payload.new.status : 'PRESENT';
+
+                    if (eventStatus === 'REMOVED') {
+                        console.log(`[Realtime] Card removed: ${uid}. Resetting UI.`);
+                        resetScan();
+                        return;
+                    }
 
                     if (uid && isMounted.current) {
                         console.log(`[Realtime] Processing UID: ${uid} (Event ID: ${eventId})`);
@@ -120,6 +179,10 @@ export default function ScanPage() {
                         // Check if we are already busy
                         if (processingRef.current) {
                             console.warn('[Realtime] IGNORED: Already busy processing another scan.');
+                            // Still update the UI to show the card is present if it's the same card
+                            if (scanResult?.card?.uid === uid) {
+                                // Refresh logic could go here if needed
+                            }
                             return;
                         }
 
@@ -473,37 +536,11 @@ export default function ScanPage() {
                         onClick={() => setShowSettings(!showSettings)}
                         aria-label={t('reader_settings')}
                         aria-expanded={showSettings}
-                        className="p-2.5 bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-xl text-slate-400 hover:text-blue-400 hover:border-blue-500/50 transition-all min-w-[44px] min-h-[44px] flex items-center justify-center"
+                        className={`p-2.5 backdrop-blur-sm border rounded-xl transition-all min-w-[44px] min-h-[44px] flex items-center justify-center ${showSettings ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-slate-800/50 border-slate-700/50 text-slate-400 hover:text-blue-400 hover:border-blue-500/50'}`}
                     >
                         <Settings size={18} />
+                        <span className="ms-2 text-xs font-bold">{selectedTerminal ? terminals.find(t => t.id.toString() === selectedTerminal)?.name : t('tabs_terminals')}</span>
                     </button>
-
-                    <button
-                        onClick={handleConnectHwReader}
-                        title={hwStatus === 'connected' ? "Disconnect Hardware Reader" : "Connect Hardware Reader (v4.0 Feature Report)"}
-                        className={`p-2.5 backdrop-blur-sm border rounded-xl transition-all min-w-[44px] min-h-[44px] flex items-center justify-center ${hwStatus === 'connected'
-                            ? 'bg-blue-500/20 text-blue-400 border-blue-500/50'
-                            : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-blue-400 hover:border-blue-500/50'
-                            }`}
-                    >
-                        <Wifi size={18} className={hwStatus === 'connected' ? 'animate-pulse' : ''} />
-                    </button>
-
-                    <div
-                        className={`flex items-center gap-2 px-4 py-2 rounded-full border backdrop-blur-sm transition-all ${status === 'connected' || status === 'processing'
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                            : status === 'error'
-                                ? 'bg-red-500/10 text-red-400 border-red-500/30 animate-pulse'
-                                : 'bg-slate-800/50 text-slate-400 border-slate-700/50'
-                            }`}
-                        role="status"
-                        aria-live="polite"
-                    >
-                        {status === 'connected' || status === 'processing' ? <Zap size={16} className="fill-current" aria-hidden="true" /> : <WifiOff size={16} aria-hidden="true" />}
-                        <span className="text-xs font-bold uppercase tracking-wider">
-                            {status === 'connected' || status === 'processing' ? t('connected') : status === 'error' ? (t('connection_error') || 'خطأ') : t('disconnected')}
-                        </span>
-                    </div>
 
                     {status === 'error' && (
                         <button
@@ -521,42 +558,66 @@ export default function ScanPage() {
             {showSettings && (
                 <div className="absolute top-14 start-0 z-50 w-80 bg-slate-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-700/50 p-5 animate-in slide-in-from-top-2 duration-200" role="dialog" aria-label={t('reader_settings')}>
                     <h3 className="font-bold text-white mb-4">{t('reader_settings')}</h3>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                         <div>
-                            <label htmlFor="branch-select" className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('terminal_branch')}</label>
-                            <select
-                                id="branch-select"
-                                value={selectedBranch}
-                                onChange={(e) => {
-                                    setSelectedBranch(e.target.value);
-                                    setSelectedTerminal('');
-                                }}
-                                className="w-full px-3 py-2 text-sm border-none bg-slate-900/80 rounded-xl text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all min-h-[44px]"
-                                aria-label={t('terminal_branch')}
-                            >
-                                <option value="">{t('tabs_branches')}...</option>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('terminal_branch')}</label>
+                            <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
                                 {branches.map(b => (
-                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                    <button
+                                        key={b.id}
+                                        onClick={() => {
+                                            setSelectedBranch(b.id.toString());
+                                            setSelectedTerminal('');
+                                        }}
+                                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all ${selectedBranch === b.id.toString() ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-900/50 text-slate-300 hover:bg-slate-900'}`}
+                                    >
+                                        <span className="font-bold">{b.name}</span>
+                                        {selectedBranch === b.id.toString() && <CheckCircle2 size={14} />}
+                                    </button>
                                 ))}
-                            </select>
+                            </div>
                         </div>
 
-                        <div>
-                            <label htmlFor="terminal-select" className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('tabs_terminals')}</label>
-                            <select
-                                id="terminal-select"
-                                value={selectedTerminal}
-                                onChange={(e) => handleTerminalSelect(e.target.value)}
-                                disabled={!selectedBranch}
-                                className="w-full px-3 py-2 text-sm border-none bg-slate-900/80 rounded-xl text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all disabled:opacity-50 min-h-[44px]"
-                                aria-label={t('tabs_terminals')}
-                            >
-                                <option value="">{t('tabs_terminals')}...</option>
-                                {terminals.map(t => (
-                                    <option key={t.id} value={t.id}>{t.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        {selectedBranch && (
+                            <div className="animate-in fade-in slide-in-from-top-2">
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('tabs_terminals')}</label>
+                                <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                                    {terminals.map(terminal => {
+                                        const lastSeen = terminalActivity[terminal.id];
+                                        const isOnline = lastSeen && (new Date() - new Date(lastSeen)) < 2 * 60 * 1000;
+                                        return (
+                                            <button
+                                                key={terminal.id}
+                                                onClick={() => {
+                                                    handleTerminalSelect(terminal.id.toString());
+                                                    setShowSettings(false);
+                                                }}
+                                                className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-all group ${selectedTerminal === terminal.id.toString() ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-900/50 text-slate-300 hover:bg-slate-900 border border-transparent hover:border-slate-700'}`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-600'}`} />
+                                                    <div className="flex flex-col items-start">
+                                                        <span className="font-bold">{terminal.name}</span>
+                                                        <span className="text-[9px] opacity-60 font-mono">ID: {terminal.id}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] font-black uppercase tracking-wider ${isOnline ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                                        {isOnline ? t('online') || 'متصل' : t('offline') || 'غير متصل'}
+                                                    </span>
+                                                    {selectedTerminal === terminal.id.toString() && <CheckCircle2 size={14} />}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                    {terminals.length === 0 && (
+                                        <div className="p-4 text-center text-slate-500 text-xs italic">
+                                            {t('no_data')}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -602,12 +663,12 @@ export default function ScanPage() {
                                 {/* Compact Header */}
                                 <div className="p-4 border-b border-gray-200 dark:border-slate-600/50 flex items-center justify-between bg-gray-50/50 dark:bg-black/40 backdrop-blur-sm flex-shrink-0">
                                     <div className="flex items-center gap-3">
-                                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
-                                            <User size={20} />
+                                        <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                            <User size={24} />
                                         </div>
                                         <div className="flex flex-col">
                                             <div className="flex items-center gap-3 mb-1">
-                                                <h3 className="text-lg font-bold text-gray-900 dark:text-white leading-none">{scanResult.customer.full_name}</h3>
+                                                <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none">{scanResult.customer.full_name}</h3>
                                                 <button
                                                     onClick={() => setShowDangerZone(!showDangerZone)}
                                                     className={`p-1 rounded-lg transition-colors ${showDangerZone ? 'bg-red-500/10 text-red-500' : 'text-slate-400 hover:text-red-500 hover:bg-red-500/5'}`}
@@ -616,15 +677,35 @@ export default function ScanPage() {
                                                     <Zap size={14} className={showDangerZone ? 'fill-current' : ''} />
                                                 </button>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <div className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700/50 shadow-sm group-hover:border-blue-500/30 transition-all">
-                                                    <CreditCard size={12} className="text-blue-500/70" />
-                                                    <span className="text-xs font-black text-slate-700 dark:text-blue-400 uppercase tracking-[0.1em] font-mono">{scanResult.card.uid}</span>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 border-2 border-blue-500/30 rounded-xl shadow-lg ring-4 ring-blue-500/5">
+                                                    <CreditCard size={14} className="text-blue-500 font-bold" />
+                                                    <span className="text-lg font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest font-mono">{scanResult.card.uid}</span>
                                                 </div>
-                                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/20 shadow-sm">
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                                    <span className="text-[10px] font-black uppercase tracking-wider">{t('active_status')}</span>
-                                                </div>
+
+                                                {/* Expiry Warning Alert Component */}
+                                                {(() => {
+                                                    if (!scanResult.card.expires_at) return null;
+                                                    const daysLeft = Math.ceil((new Date(scanResult.card.expires_at) - new Date()) / (1000 * 60 * 60 * 24));
+                                                    const isLow = daysLeft <= 7;
+                                                    const isExpired = daysLeft <= 0;
+
+                                                    return (
+                                                        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 shadow-sm transition-all ${isExpired ? 'bg-red-500/10 text-red-500 border-red-500/30 animate-pulse' :
+                                                            isLow ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' :
+                                                                'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                            }`}>
+                                                            {isLow && <Zap size={10} className="fill-current animate-bounce" />}
+                                                            <div className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-red-500' : isLow ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                                                            <span className="text-[10px] font-black uppercase tracking-wider">
+                                                                {isExpired ? (t('card_expired') || 'EXPIRED') :
+                                                                    isLow ? `⚠️ ${daysLeft} ${t('days_remaining') || 'Days Left'}` :
+                                                                        t('active_status')}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })()}
+
                                                 {showDangerZone && (
                                                     <div className="flex items-center gap-1 ml-2 animate-in fade-in slide-in-from-left-2">
                                                         <button
@@ -641,7 +722,6 @@ export default function ScanPage() {
                                                         </button>
                                                     </div>
                                                 )}
-                                                {/* Removed Total Savings Pill as requested */}
                                             </div>
                                         </div>
                                     </div>
@@ -675,13 +755,27 @@ export default function ScanPage() {
                                 </div>
                             </div>
                         ) : (
-                            // Error state
+                            // Error state / Unknown Card
                             <div className="h-full bg-gradient-to-br from-red-900/20 to-slate-900/50 backdrop-blur-sm rounded-3xl border border-red-500/30 flex flex-col items-center justify-center text-center p-8">
-                                <div className="h-16 w-16 rounded-full flex items-center justify-center mb-4 bg-red-500/10 text-red-400 border border-red-500/30">
-                                    <XCircle size={32} />
+                                <div className="h-20 w-20 rounded-full flex items-center justify-center mb-6 bg-red-500/10 text-red-400 border border-red-500/30 animate-pulse">
+                                    <XCircle size={40} />
                                 </div>
-                                <h3 className="text-xl font-bold text-white mb-2">{scanResult.message}</h3>
-                                <button onClick={resetScan} className="mt-4 text-sm font-bold text-slate-400 hover:text-white transition-colors">{t('cancel')}</button>
+                                <h3 className="text-2xl font-black text-white mb-2">{scanResult.message}</h3>
+                                {scanResult.uid && (
+                                    <div className="mt-4 flex flex-col items-center gap-4">
+                                        <div className="px-5 py-2 bg-slate-800 border-2 border-slate-700 rounded-2xl">
+                                            <span className="text-xl font-black text-blue-400 font-mono tracking-widest">{scanResult.uid}</span>
+                                        </div>
+                                        <button
+                                            onClick={() => router.push(`/dashboard/customers?uid=${scanResult.uid}`)}
+                                            className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-2xl font-black text-lg shadow-xl shadow-blue-600/20 transition-all active:scale-95 flex items-center gap-3"
+                                        >
+                                            <UserPlus size={24} />
+                                            {t('register_new_customer') || 'تسجيل عميل جديد'}
+                                        </button>
+                                    </div>
+                                )}
+                                <button onClick={resetScan} className="mt-8 text-sm font-bold text-slate-400 hover:text-white transition-all uppercase tracking-widest">{t('cancel')}</button>
                             </div>
                         )}
                     </div>

@@ -4,6 +4,7 @@ import { Plus, CreditCard, Link as LinkIcon, AlertCircle, Edit, Trash2 } from 'l
 import { toast } from 'sonner';
 import { useLanguage } from '@/lib/LanguageContext';
 import DataTable from '@/components/DataTable';
+import NfcScanButton from '@/components/NfcScanButton';
 
 export default function CardsPage() {
     const { t, dir, language } = useLanguage();
@@ -268,9 +269,12 @@ export default function CardsPage() {
 
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
-                                <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1`}>
-                                    {t('card_uid')}
-                                </label>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400`}>
+                                        {t('card_uid')}
+                                    </label>
+                                    {!formData.id && <NfcScanButton onScan={(uid) => setFormData({ ...formData, uid })} />}
+                                </div>
                                 <input
                                     type="text"
                                     required
@@ -298,20 +302,33 @@ export default function CardsPage() {
                                 </select>
                             </div>
 
-                            <div>
-                                <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1`}>
-                                    {t('expires_at')}
-                                </label>
-                                <input
-                                    type="date"
-                                    className={`w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
-                                    value={formData.expires_at}
-                                    onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
-                                />
-                                <p className="text-[10px] text-gray-400 mt-1">
-                                    {t('default_expiry_msg')}
-                                </p>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1`}>
+                                        {t('valid_from') || 'تاريخ البدء'}
+                                    </label>
+                                    <input
+                                        type="date"
+                                        className={`w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
+                                        value={formData.valid_from || ''}
+                                        onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1`}>
+                                        {t('expires_at')}
+                                    </label>
+                                    <input
+                                        type="date"
+                                        className={`w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all`}
+                                        value={formData.expires_at}
+                                        onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
+                                    />
+                                </div>
                             </div>
+                            <p className="text-[10px] text-gray-400">
+                                {t('default_expiry_msg')}
+                            </p>
 
                             {formData.id && (
                                 <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
@@ -342,7 +359,7 @@ export default function CardsPage() {
                                     type="button"
                                     onClick={() => {
                                         setShowModal(false);
-                                        setFormData({ id: null, uid: '', customer_id: '', expires_at: '', is_active: true });
+                                        setFormData({ id: null, uid: '', customer_id: '', expires_at: '', valid_from: new Date().toISOString().split('T')[0], is_active: true });
                                     }}
                                     className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-3 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-all font-bold"
                                 >

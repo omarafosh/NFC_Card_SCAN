@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useLanguage } from '@/lib/LanguageContext';
 import DataTable from '@/components/DataTable';
 import SearchableSelect from '@/components/SearchableSelect';
+import NfcScanButton from '@/components/NfcScanButton';
 
 export default function CustomersPage() {
     const { t } = useLanguage();
@@ -303,10 +304,13 @@ function CustomersContent() {
                                 />
                             </div>
                             <div>
-                                <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2 flex items-center gap-2 ${dir === 'rtl' ? 'flex-row-reverse' : ''}`}>
-                                    <CreditCard size={14} className="text-blue-500" />
-                                    {t('card_uid')}
-                                </label>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-2`}>
+                                        <CreditCard size={14} className="text-blue-500" />
+                                        {t('card_uid')}
+                                    </label>
+                                    <NfcScanButton onScan={(uid) => setFormData({ ...formData, uid })} />
+                                </div>
                                 <SearchableSelect
                                     options={availableCards
                                         .filter(c => !c.customer_id || (formData.id && c.customer_id === formData.id))

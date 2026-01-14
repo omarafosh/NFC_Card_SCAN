@@ -119,8 +119,21 @@ async function main() {
                 sound: true
             });
 
+            let lastUid = null;
+            let lastScanTime = 0;
+
             reader.on('card', async card => {
                 const uid = card.uid.toUpperCase();
+                const now = Date.now();
+
+                // Debounce: Ignore same card within 2 seconds
+                if (uid === lastUid && (now - lastScanTime) < 2000) {
+                    return;
+                }
+
+                lastUid = uid;
+                lastScanTime = now;
+
                 console.log('');
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                 console.log('📇 Card detected!');
@@ -141,7 +154,8 @@ async function main() {
                         .from('scan_events')
                         .insert({
                             uid,
-                            terminal_id: parseInt(terminalId)
+                            terminal_id: parseInt(terminalId),
+                            status: 'PRESENT'
                         });
 
                     if (scanError) {
@@ -159,6 +173,23 @@ async function main() {
                     console.error('❌ Processing Error:', error.message);
                 }
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            });
+
+            reader.on('card.off', async card => {
+                console.log('📤 Card removed:', card.uid.toUpperCase());
+                lastUid = null; // Clear last UID on removal to allow immediate re-scan
+
+                try {
+                    await supabase
+                        .from('scan_events')
+                        .insert({
+                            uid: card.uid.toUpperCase(),
+                            terminal_id: parseInt(terminalId),
+                            status: 'REMOVED'
+                        });
+                } catch (e) {
+                    // Ignore errors for disconnect events
+                }
             });
 
             reader.on('end', () => {

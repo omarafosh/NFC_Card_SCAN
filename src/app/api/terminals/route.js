@@ -32,7 +32,23 @@ export async function GET(request) {
         const { data, error } = await query.order('name', { ascending: true });
         if (error) throw error;
 
-        return successResponse(data);
+        // Enhance with last activity
+        const terminalsWithActivity = await Promise.all(data.map(async (terminal) => {
+            const { data: lastScan } = await supabase
+                .from('scan_events')
+                .select('created_at')
+                .eq('terminal_id', terminal.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            return {
+                ...terminal,
+                last_activity: lastScan ? lastScan.created_at : null
+            };
+        }));
+
+        return successResponse(terminalsWithActivity);
     } catch (error) {
         return handleApiError(error, 'GET /api/terminals');
     }

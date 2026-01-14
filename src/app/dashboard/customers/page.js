@@ -309,7 +309,7 @@ function CustomersContent() {
                                         <CreditCard size={14} className="text-blue-500" />
                                         {t('card_uid')}
                                     </label>
-                                    <NfcScanButton onScan={(uid) => setFormData({ ...formData, uid })} />
+                                    <NfcScanButton onScan={(uid) => setFormData({ ...formData, uid: uid.toUpperCase() })} />
                                 </div>
                                 <SearchableSelect
                                     options={availableCards
@@ -319,7 +319,7 @@ function CustomersContent() {
                                             label: `${c.uid} ${c.customer_id ? `(${t('card_status_current')})` : `(${t('card_status_available')})`}`
                                         }))}
                                     value={formData.uid}
-                                    onChange={(val) => setFormData({ ...formData, uid: val })}
+                                    onChange={(val) => setFormData({ ...formData, uid: (val || '').toUpperCase() })}
                                     placeholder={t('search') || "Search..."}
                                 />
                                 {uidFromUrl && <p className={`text-[10px] text-blue-500 mt-2 font-bold ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('autofilled_msg') || 'Auto-filled from scan'}</p>}

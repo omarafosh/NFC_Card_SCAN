@@ -41,9 +41,10 @@ export default function NfcScanButton({ onScan, className = "" }) {
                     filter: `terminal_id=eq.${terminalId}`
                 },
                 (payload) => {
-                    const uid = payload.new ? payload.new.uid : null;
-                    if (uid) {
-                        onScan(uid);
+                    console.log('[NfcScanButton] Event received:', payload);
+                    const { uid, status } = payload.new || {};
+                    if (uid && status === 'PRESENT') {
+                        onScan(uid.toUpperCase());
                         setIsScanning(false);
                         toast.success(t('card_scanned_success') || 'تم قراءة البطاقة بنجاح');
                     }

@@ -42,6 +42,8 @@ export default function SearchableSelect({
     useEffect(() => {
         if (selectedOption && !isOpen) {
             setSearch(displayValue(selectedOption));
+        } else if (value && !selectedOption && !isOpen) {
+            setSearch(value);
         } else if (!value && !isOpen) {
             setSearch('');
         }

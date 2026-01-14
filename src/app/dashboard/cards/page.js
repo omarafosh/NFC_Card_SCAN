@@ -284,15 +284,15 @@ export default function CardsPage() {
                                     <label className={`block text-sm font-medium text-gray-600 dark:text-gray-400`}>
                                         {t('card_uid')}
                                     </label>
-                                    {!formData.id && <NfcScanButton onScan={(uid) => setFormData({ ...formData, uid })} />}
+                                    {!formData.id && <NfcScanButton onScan={(uid) => setFormData({ ...formData, uid: uid.toUpperCase() })} />}
                                 </div>
                                 <input
                                     type="text"
                                     required
                                     disabled={!!formData.id}
-                                    className={`w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-purple-500 font-mono transition-all disabled:opacity-50`}
+                                    className={`w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl dark:text-white outline-none focus:ring-2 focus:ring-purple-500 font-mono transition-all disabled:opacity-50 uppercase`}
                                     value={formData.uid}
-                                    onChange={(e) => setFormData({ ...formData, uid: e.target.value })}
+                                    onChange={(e) => setFormData({ ...formData, uid: e.target.value.toUpperCase() })}
                                     placeholder="e.g. 04 A1 B2 C3"
                                 />
                             </div>

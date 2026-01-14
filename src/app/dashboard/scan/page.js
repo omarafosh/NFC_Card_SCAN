@@ -558,7 +558,7 @@ export default function ScanPage() {
                                 <input
                                     type="text"
                                     value={manualUid}
-                                    onChange={(e) => setManualUid(e.target.value)}
+                                    onChange={(e) => setManualUid(e.target.value.toUpperCase())}
                                     onKeyDown={(e) => e.key === 'Enter' && handleManualScan()}
                                     placeholder={t('enter_uid')}
                                     autoFocus

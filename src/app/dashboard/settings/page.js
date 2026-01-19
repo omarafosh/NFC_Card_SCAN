@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { useSettings } from '@/lib/SettingsContext';
-import { Settings, DollarSign, Coins, Save, Palette, Shield, Globe, Info, Activity, Upload, Loader2, Image as ImageIcon } from 'lucide-react';
+import { Settings, DollarSign, Coins, Save, Palette, Shield, Globe, Info, Activity, Upload, Loader2, Image as ImageIcon, Database } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 
@@ -21,7 +21,9 @@ export default function SettingsPage() {
         toast_duration: '3000',
         logo_url: '',
         maintenance_mode: 'false',
-        expiry_warning_days: '7'
+        expiry_warning_days: '7',
+        enable_db_cleanup: 'false',
+        db_cleanup_days: '10'
     });
     const [currentUser, setCurrentUser] = useState(null);
 
@@ -396,6 +398,53 @@ export default function SettingsPage() {
                                         <div className="text-purple-600 dark:text-purple-400 font-black text-xs uppercase tracking-widest mb-1">{t('api_status')}</div>
                                         <div className="text-lg font-black text-purple-900 dark:text-purple-200">{t('status_active')}</div>
                                     </div>
+                                </div>
+
+                                {/* DB Cleanup Settings */}
+                                <div className="mt-8 bg-gray-50 dark:bg-slate-950 p-6 rounded-3xl border border-gray-100 dark:border-slate-800">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                        <div>
+                                            <h4 className="font-black text-gray-900 dark:text-white flex items-center gap-2">
+                                                <Database size={18} className="text-purple-500" />
+                                                {t('enable_db_cleanup')}
+                                            </h4>
+                                            <p className="text-xs text-gray-500 font-medium mt-1">
+                                                {t('db_cleanup_desc')}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-3 p-1 bg-white dark:bg-slate-900 rounded-2xl w-fit shadow-sm">
+                                                <button
+                                                    onClick={() => setSettings({ ...settings, enable_db_cleanup: 'true' })}
+                                                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${settings.enable_db_cleanup === 'true' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-400'}`}
+                                                >
+                                                    {t('on')}
+                                                </button>
+                                                <button
+                                                    onClick={() => setSettings({ ...settings, enable_db_cleanup: 'false' })}
+                                                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${settings.enable_db_cleanup === 'false' ? 'bg-gray-200 dark:bg-slate-800 text-gray-600 dark:text-gray-400' : 'text-gray-400'}`}
+                                                >
+                                                    {t('off')}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {settings.enable_db_cleanup === 'true' && (
+                                        <div className="mt-4 animate-in slide-in-from-top-2">
+                                            <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">
+                                                {t('db_cleanup_days')}
+                                            </label>
+                                            <input
+                                                type="number"
+                                                name="db_cleanup_days"
+                                                value={settings.db_cleanup_days}
+                                                onChange={handleChange}
+                                                className="w-full md:w-32 bg-white dark:bg-slate-900 border-none rounded-2xl p-3 text-gray-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-purple-500/20 transition-all text-center"
+                                                placeholder="10"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="mt-8 flex gap-4">

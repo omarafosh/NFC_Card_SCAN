@@ -175,6 +175,15 @@ export default function ScanPage() {
                         return;
                     }
 
+                    // --- TIME FILTER (Phantom Scan Fix) ---
+                    const eventTime = new Date(payload.new.created_at).getTime();
+                    const now = Date.now();
+                    // Ignore events older than 10 seconds
+                    if (now - eventTime > 10000) {
+                        console.warn(`[Realtime] IGNORED STALE EVENT: ${uid} (Age: ${Math.round((now - eventTime) / 1000)}s)`);
+                        return;
+                    }
+
                     if (uid && isMounted.current) {
                         console.log(`[Realtime] Processing UID: ${uid} (Event ID: ${eventId})`);
 
@@ -246,7 +255,7 @@ export default function ScanPage() {
                 // Fetch the latest unprocessed scan event for this terminal
                 const { data, error } = await supabase
                     .from('scan_events')
-                    .select('id, uid')
+                    .select('id, uid, created_at')
                     .eq('terminal_id', selectedTerminal)
                     .eq('processed', false)
                     .order('created_at', { ascending: false })
@@ -255,6 +264,16 @@ export default function ScanPage() {
 
                 if (data && data.uid && isMounted.current) {
                     console.log('[Polling] Detected unprocessed event:', data);
+
+                    // --- TIME FILTER (Polling) ---
+                    const eventTime = new Date(data.created_at).getTime();
+                    const now = Date.now();
+                    if (now - eventTime > 15000) { // Slightly looser for polling (15s)
+                        console.warn(`[Polling] IGNORED STALE EVENT: ${data.uid}`);
+                        // Mark as processed so we don't see it again
+                        await supabase.from('scan_events').update({ processed: true }).eq('id', data.id);
+                        return;
+                    }
 
                     // Double check busy state before proceeding
                     if (processingRef.current) return;

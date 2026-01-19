@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSettings } from '@/lib/SettingsContext';
-import { LayoutDashboard, Users, CreditCard, Tag, Settings, History, Scan, ShieldAlert, ShieldCheck, Megaphone, Monitor, Store } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Tag, Settings, History, Scan, ShieldAlert, ShieldCheck, Megaphone, Monitor, Store, Landmark } from 'lucide-react';
 import { useLanguage } from '@/lib/LanguageContext';
 
 const menuItems = [
@@ -14,6 +14,7 @@ const menuItems = [
   // { name: 'nav_discounts', href: '/dashboard/discounts', icon: Tag }, // REMOVED
   { name: 'nav_campaigns', href: '/dashboard/campaigns', icon: Megaphone },
   { name: 'nav_transactions', href: '/dashboard/transactions', icon: History },
+  { name: 'nav_finance_hub', href: '/dashboard/finance', icon: Landmark },
   { name: 'nav_logs', href: '/dashboard/audit', icon: ShieldAlert },
   { name: 'nav_management', href: '/dashboard/management', icon: ShieldCheck },
   { name: 'nav_terminals', href: '/dashboard/terminals', icon: Monitor },

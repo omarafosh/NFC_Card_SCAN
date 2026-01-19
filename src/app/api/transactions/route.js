@@ -50,7 +50,7 @@ export async function GET(request) {
         const rows = data.map(t => ({
             ...t,
             customer_name: t.customers?.full_name || null,
-            discount_name: t.discounts?.name || null
+            discount_name: t.metadata?.discount_name || t.discounts?.name || null
         }));
 
         return successResponse(rows);
@@ -197,7 +197,12 @@ export async function POST(request) {
                     amount_after,
                     points_earned: 0, // Legacy: 0
                     payment_method,
-                    status: 'success'
+                    status: 'success',
+                    metadata: {
+                        discount_name: applied_discount_name,
+                        manual_discount_type,
+                        manual_discount
+                    }
                 }
             ])
             .select()
@@ -405,6 +410,7 @@ export async function POST(request) {
 }
 
 export async function DELETE(request) {
+    const session = await getSession();
     if (!session || session.role !== 'admin') {
         return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }

@@ -13,6 +13,8 @@ export default function CardsPage() {
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all'); // all, connected, recharge, disconnected
+    const [expiryWarningDays, setExpiryWarningDays] = useState(7); // Default
     const [showModal, setShowModal] = useState(false);
     const [formData, setFormData] = useState({ id: null, uid: '', customer_id: '', expires_at: '', is_active: true });
     const [showDeleted, setShowDeleted] = useState(false);
@@ -21,7 +23,21 @@ export default function CardsPage() {
     useEffect(() => {
         setMounted(true);
         fetchData();
+        fetchSettings();
     }, [showDeleted]);
+
+    const fetchSettings = async () => {
+        try {
+            const res = await fetch('/api/settings');
+            const data = await res.json();
+            if (data.data) {
+                const days = parseInt(data.data.find(s => s.key_name === 'expiry_warning_days')?.value || '7');
+                setExpiryWarningDays(days);
+            }
+        } catch (e) {
+            console.error('Failed to load settings', e);
+        }
+    };
 
     const fetchData = async () => {
         setLoading(true);
@@ -39,6 +55,38 @@ export default function CardsPage() {
             toast.error(t('error_loading'));
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Helper to determine card status
+    const getCardStatus = (card) => {
+        if (!card.is_active) return 'disconnected'; // Manually Inactive
+        if (!card.expires_at) return 'connected'; // No expiry = Connected
+        const now = new Date();
+        const expiryDate = new Date(card.expires_at);
+        const warningDate = new Date();
+        warningDate.setDate(warningDate.getDate() + expiryWarningDays);
+
+        if (expiryDate < now) return 'disconnected'; // Expired
+        if (expiryDate <= warningDate) return 'recharge'; // Near Expiry
+        return 'connected'; // Healthy
+    };
+
+    const getStatusLabel = (status) => {
+        switch (status) {
+            case 'connected': return t('connected');
+            case 'recharge': return t('card_status_recharge');
+            case 'disconnected': return t('disconnected');
+            default: return status;
+        }
+    };
+
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'connected': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+            case 'recharge': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+            case 'disconnected': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+            default: return 'bg-gray-100 text-gray-700';
         }
     };
 
@@ -110,10 +158,15 @@ export default function CardsPage() {
         }
     };
 
-    const filteredCards = cards.filter(card =>
-        card.uid.toLowerCase().includes(search.toLowerCase()) ||
-        (card.customer_name && card.customer_name.toLowerCase().includes(search.toLowerCase()))
-    );
+    const filteredCards = cards.filter(card => {
+        const matchesSearch = card.uid.toLowerCase().includes(search.toLowerCase()) ||
+            (card.customer_name && card.customer_name.toLowerCase().includes(search.toLowerCase()));
+
+        if (statusFilter === 'all') return matchesSearch;
+
+        const status = getCardStatus(card);
+        return matchesSearch && status === statusFilter;
+    });
 
     const columns = [
         {
@@ -145,11 +198,14 @@ export default function CardsPage() {
             cell: (row) => {
                 if (!row.expires_at) return <span className="text-gray-400">-</span>;
                 const date = new Date(row.expires_at);
-                const isExpired = date < new Date();
-                const warningDays = 7; // We could fetch settings here but usually columns are static
-                const isSoon = date < new Date(Date.now() + warningDays * 24 * 60 * 60 * 1000);
+                const status = getCardStatus(row);
+                // Highlight if expired or purge
+                let colorClass = 'text-gray-600 dark:text-gray-400';
+                if (status === 'disconnected') colorClass = 'text-red-500 font-bold';
+                if (status === 'recharge') colorClass = 'text-yellow-600 font-bold';
+
                 return (
-                    <span className={`text-xs font-bold ${isExpired ? 'text-red-500' : isSoon ? 'text-yellow-500' : 'text-gray-600 dark:text-gray-400'}`}>
+                    <span className={`text-xs ${colorClass}`}>
                         {date.toLocaleDateString()}
                     </span>
                 );
@@ -157,12 +213,15 @@ export default function CardsPage() {
         },
         {
             header: t('status'),
-            accessor: 'is_active',
-            cell: (row) => (
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${row.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {row.is_active ? t('connected') : t('disconnected')}
-                </span>
-            )
+            accessor: 'status', // Virtual accessor
+            cell: (row) => {
+                const status = getCardStatus(row);
+                return (
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${getStatusColor(status)}`}>
+                        {getStatusLabel(status)}
+                    </span>
+                );
+            }
         },
         {
             header: t('actions'),
@@ -221,7 +280,7 @@ export default function CardsPage() {
     return (
         <div className="space-y-6" suppressHydrationWarning>
             <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-4`}>
-                <div className="flex gap-2 w-full md:w-auto">
+                <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
                     <button
                         onClick={() => {
                             setFormData({ id: null, uid: '', customer_id: '', expires_at: '', is_active: true });
@@ -232,6 +291,24 @@ export default function CardsPage() {
                         <Plus size={20} />
                         {t('link_card')}
                     </button>
+
+                    {/* Status Filter */}
+                    <div className="relative">
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="appearance-none bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 py-2.5 pl-4 pr-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 font-bold text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                        >
+                            <option value="all">{t('all') || 'الكل'}</option>
+                            <option value="connected">{t('connected')}</option>
+                            <option value="recharge">{t('card_status_recharge')}</option>
+                            <option value="disconnected">{t('disconnected')}</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                        </div>
+                    </div>
+
                     <button
                         onClick={() => setShowDeleted(!showDeleted)}
                         className={`px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all ${showDeleted

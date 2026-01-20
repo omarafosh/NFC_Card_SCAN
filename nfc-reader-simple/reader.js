@@ -121,13 +121,17 @@ async function main() {
 
             let lastUid = null;
             let lastScanTime = 0;
+            let lastRemovalTime = 0;
 
             reader.on('card', async card => {
                 const uid = card.uid.toUpperCase();
                 const now = Date.now();
 
-                // Debounce: Ignore same card within 2 seconds
-                if (uid === lastUid && (now - lastScanTime) < 2000) {
+                // Debounce: Ignore if same card read recently (2.5s) OR immediately after removal (1s)
+                const isRecentRead = (uid === lastUid && (now - lastScanTime) < 2500);
+                const isBounceOnRemoval = (uid === lastUid && (now - lastRemovalTime) < 1000);
+
+                if (isRecentRead || isBounceOnRemoval) {
                     return;
                 }
 
@@ -177,7 +181,8 @@ async function main() {
 
             reader.on('card.off', async card => {
                 console.log('📤 Card removed:', card.uid.toUpperCase());
-                lastUid = null; // Clear last UID on removal to allow immediate re-scan
+                lastRemovalTime = Date.now();
+                // do NOT clear lastUid here, to prevent bounces
 
                 try {
                     await supabase

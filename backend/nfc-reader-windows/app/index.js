@@ -8257,6 +8257,11 @@ Secure Multi-platform Terminal`, {
   process.on("SIGTERM", cleanup);
   const nfc = new import_nfc_pcsc.NFC();
   nfc.on("reader", (reader) => {
+    // State for debouncing
+    let lastProcessedUid = null;
+    let lastProcessedTime = 0;
+    let lastRemovalTime = 0;
+
     const name = reader.name.toLowerCase();
     if (false && (name.includes("microsoft ifd") || name.includes("alcorlink") || name.includes("scardsvr"))) {
       log(`Ignored internal/virtual reader: ${reader.name}`, "info");
@@ -8266,7 +8271,21 @@ Secure Multi-platform Terminal`, {
     hardwareReaderAttached = true;
     hardwareReaderName = reader.name;
     log(`Hardware Connected: ${reader.name}`, "info");
+
     reader.on("card", async (card) => {
+      const now = Date.now();
+
+      // Debounce logic
+      const isRecentRead = (card.uid === lastProcessedUid && (now - lastProcessedTime < 2500));
+      const isBounceOnRemoval = (card.uid === lastProcessedUid && (now - lastRemovalTime < 1000));
+
+      if (isRecentRead || isBounceOnRemoval) {
+        return;
+      }
+
+      lastProcessedUid = card.uid;
+      lastProcessedTime = now;
+
       console.log("\n" + boxen(import_chalk4.default.bold.yellow(`\u{1F4B3} CARD DETECTED
 UID: ${card.uid}`), { padding: 0.5, borderColor: "yellow" }));
       spinner.start("Processing...");
@@ -8282,6 +8301,11 @@ UID: ${card.uid}`), { padding: 0.5, borderColor: "yellow" }));
         spinner.fail(import_chalk4.default.red(`Processing Failed: ${err.message}`));
       }
     });
+
+    reader.on("card.off", (card) => {
+      lastRemovalTime = Date.now();
+    });
+
     reader.on("error", (err) => log(`Reader error: ${err.message}`, "error"));
     reader.on("end", () => {
       hardwareReaderAttached = false;

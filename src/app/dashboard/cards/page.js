@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Plus, CreditCard, Link as LinkIcon, AlertCircle, Edit, Trash2 } from 'lucide-react';
+import { Plus, CreditCard, Link as LinkIcon, AlertCircle, Edit, Trash2, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { useLanguage } from '@/lib/LanguageContext';
 import DataTable from '@/components/DataTable';
@@ -30,7 +31,7 @@ export default function CardsPage() {
         try {
             const res = await fetch('/api/settings');
             const data = await res.json();
-            if (data.data) {
+            if (data && Array.isArray(data.data)) {
                 const days = parseInt(data.data.find(s => s.key_name === 'expiry_warning_days')?.value || '7');
                 setExpiryWarningDays(days);
             }
@@ -230,6 +231,13 @@ export default function CardsPage() {
                 <div className={`flex gap-1`}>
                     {!showDeleted ? (
                         <>
+                            <Link
+                                href={`/dashboard/cards/enroll?uid=${row.uid}&customer_id=${row.customer_id || ''}`}
+                                className="p-2 text-gray-400 hover:text-green-600 transition-colors rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20"
+                                title={t('program_card') || 'Program Card'}
+                            >
+                                <ShieldCheck size={16} />
+                            </Link>
                             <button
                                 onClick={() => {
                                     setFormData({
@@ -281,6 +289,13 @@ export default function CardsPage() {
         <div className="space-y-6" suppressHydrationWarning>
             <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-4`}>
                 <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
+                    <Link
+                        href="/dashboard/cards/enroll"
+                        className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 font-bold flex items-center justify-center gap-2"
+                    >
+                        <ShieldCheck size={20} />
+                        {t('program_card') || 'Program Card'}
+                    </Link>
                     <button
                         onClick={() => {
                             setFormData({ id: null, uid: '', customer_id: '', expires_at: '', is_active: true });

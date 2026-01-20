@@ -131,6 +131,48 @@ async function main() {
             )
             .subscribe();
 
+        // 2024-01-20: Robust Polling Fallback 
+        // In case Realtime fails, we check for pending actions every 2 seconds
+        setInterval(async () => {
+            if (pendingWrite) return; // Busy
+
+            const { data: actions } = await supabase
+                .from('terminal_actions')
+                .select('*')
+                .eq('terminal_id', terminalId)
+                .eq('action_type', 'WRITE_SIGNATURE')
+                .eq('status', 'PENDING')
+                .limit(1);
+
+            if (actions && actions.length > 0) {
+                const action = actions[0];
+                console.log('');
+                console.log('🔒 Command Received (via Polling): PROGRAM CARD');
+                console.log(`   Target UID: ${action.payload.uid}`);
+                console.log('   Waiting for card...');
+
+                pendingWrite = {
+                    id: action.id,
+                    signature: action.payload.signature,
+                    targetUid: action.payload.uid
+                };
+                notifier.notify({ title: 'NFC Programming', message: 'Ready to program card' });
+            }
+        }, 2000);
+
+        // 2024-01-20: Heartbeat (Keep Status Online)
+        // Updates the dashboard status to green
+        console.log('💓 Heartbeat service started...');
+        setInterval(async () => {
+            try {
+                await supabase
+                    .from('terminals')
+                    .update({ last_active_at: new Date().toISOString() })
+                    .eq('id', terminalId);
+            } catch (e) {
+                // Sılent error
+            }
+        }, 15000); // Pulse every 15 seconds
 
         const nfc = new NFC();
 
@@ -276,9 +318,7 @@ async function main() {
             reader.on('card.off', async card => {
                 console.log('📤 Card removed');
                 lastRemovalTime = Date.now();
-                lastUid = null; // Allow re-scan immediately if physically removed? 
-                // User complained about "Double Read". 
-                // If we clear lastUid here, we risk bounce.
+                // lastUid = null; // DISABLED to prevent bounce double-reads. Logic handles timeouts.
                 // Better to KEEP lastUid but rely on `lastRemovalTime`.
                 // Actually, if we set lastUid = null, the debounce check (uid === lastUid) fails on next present -> Good.
                 // But mechinical bounce might trigger "off" then "on" effectively instantly.

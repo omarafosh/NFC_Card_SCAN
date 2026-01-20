@@ -120,10 +120,20 @@ export default function EnrollCardPage() {
             });
 
             const result = await response.json();
+            console.log('🔍 Full API Response:', result); // DEBUG LOG
+
             if (!response.ok) throw new Error(result.message);
 
-            const { signature } = result;
-            console.log('Generated Signature:', signature);
+            // Handle nested data structure from successResponse helper
+            // v5 fix: Ensure we look in result.data
+            const signature = result.data?.signature || result.signature;
+
+            console.log('✅ NEW CODE LOADED. Signature:', signature);
+            console.log('🔍 Full API Response:', result);
+
+            if (!signature) {
+                throw new Error('Server responded with success but NO Signature was found!');
+            }
 
             // 2. Queue Action for Reader
             const { data: actionData, error: actionError } = await supabase
@@ -139,9 +149,12 @@ export default function EnrollCardPage() {
 
             if (actionError) throw actionError;
 
-            // 3. Listen for Completion
+            // 3. Listen for Completion (Robust: Realtime + Polling Fallback)
             setProgramStatus('writing');
 
+            let isCompleted = false;
+
+            // Strategy A: Realtime Listener
             const channel = supabase
                 .channel(`action-${actionData.id}`)
                 .on(
@@ -153,30 +166,63 @@ export default function EnrollCardPage() {
                         filter: `id=eq.${actionData.id}`
                     },
                     (payload) => {
-                        const newStatus = payload.new.status;
-                        if (newStatus === 'COMPLETED') {
-                            setProgramStatus('success');
-                            setProgramming(false);
-                            toast.success('Card programmed successfully!');
-                            supabase.removeChannel(channel);
-                        } else if (newStatus === 'FAILED') {
-                            setProgramStatus('error');
-                            setProgramming(false);
-                            toast.error('Failed to write to card');
-                            supabase.removeChannel(channel);
-                        }
+                        handleCompletion(payload.new.status);
                     }
                 )
-                .subscribe();
+                .subscribe((status) => {
+                    console.log('Realtime Status:', status);
+                });
 
-            // Timeout safety
-            setTimeout(() => {
-                if (programming) { // If still programming
+            // Strategy B: Polling Fallback (Check every 1s)
+            const interval = setInterval(async () => {
+                if (isCompleted) return;
+
+                const { data } = await supabase
+                    .from('terminal_actions')
+                    .select('status')
+                    .eq('id', actionData.id)
+                    .single();
+
+                if (data && (data.status === 'COMPLETED' || data.status === 'FAILED')) {
+                    console.log('Detected status change via polling:', data.status);
+                    handleCompletion(data.status);
+                }
+            }, 1000);
+
+            // Completion Handler
+            const handleCompletion = (status) => {
+                if (isCompleted) return; // Prevent double trigger
+
+                if (status === 'COMPLETED') {
+                    isCompleted = true;
+                    setProgramStatus('success');
+                    setProgramming(false);
+                    toast.success('Card programmed successfully!');
+                    cleanup();
+                } else if (status === 'FAILED') {
+                    isCompleted = true;
                     setProgramStatus('error');
                     setProgramming(false);
-                    // toast.error('Programming timed out. Is the reader active?');
+                    toast.error('Failed to write to card');
+                    cleanup();
                 }
-            }, 15000);
+            };
+
+            const cleanup = () => {
+                clearInterval(interval);
+                supabase.removeChannel(channel);
+            };
+
+            // Timeout safety (20 seconds)
+            setTimeout(() => {
+                if (!isCompleted && programming) {
+                    setProgramStatus('error');
+                    setProgramming(false);
+                    cleanup();
+                    // Optional: Don't show error if it's just slow, let the user retry
+                    // toast.error('Programming timed out. Check if Reader is active.');
+                }
+            }, 20000);
 
         } catch (error) {
             console.error(error);
@@ -341,7 +387,7 @@ export default function EnrollCardPage() {
                         </div>
                     )}
 
-                    {programStatus !== 'idle' && status !== 'error' && status !== 'success' && (
+                    {programStatus !== 'idle' && programStatus !== 'error' && programStatus !== 'success' && (
                         <div className="py-12 flex flex-col items-center gap-4 animate-in fade-in zoom-in">
                             {programStatus === 'waiting' && <Loader2 className="w-16 h-16 text-blue-500 animate-spin" />}
                             {programStatus === 'writing' && <Loader2 className="w-16 h-16 text-purple-500 animate-spin" />}

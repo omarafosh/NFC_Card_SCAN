@@ -1,5 +1,6 @@
+// Force rebuild: v4
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { successResponse, handleApiError } from '@/lib/errorHandler';
 import crypto from 'crypto';
@@ -21,6 +22,18 @@ export async function POST(request) {
     const session = await getSession();
     if (!session) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
+    // Handle different session structures (JWT payload vs Supabase session)
+    const userId = session.user?.id || session.id || session.sub;
+
+    if (!userId) {
+        return NextResponse.json({ message: 'Unauthorized: Invalid Session Structure' }, { status: 401 });
+    }
+
+    // Ensure Admin Client is available
+    if (!supabaseAdmin) {
+        return NextResponse.json({ message: 'Server Misconfiguration: Missing Service Role Key' }, { status: 500 });
+    }
+
     try {
         const body = await request.json();
         const { uid, customer_id } = body;
@@ -29,11 +42,37 @@ export async function POST(request) {
             return NextResponse.json({ message: 'UID is required' }, { status: 400 });
         }
 
-        // 1. Generate Signature
-        const signature = generateSignature(uid);
+        // Validate customer_id is a valid UUID
+        const isValidUuid = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-        // 2. Check if card exists
-        const { data: existingCard } = await supabase
+        let validCustomerId = customer_id;
+        if (customer_id && !isValidUuid(customer_id)) {
+            console.warn(`Invalid UUID for customer_id: ${customer_id}. Treating as null.`);
+            validCustomerId = null;
+        }
+
+        // 0. Fetch Global Passphrase from Settings
+        let globalSignature = 'yamen'; // Default Fallback
+        try {
+            const { data: setting } = await supabaseAdmin
+                .from('settings')
+                .select('value')
+                .eq('key_name', globalSignature)
+                .maybeSingle();
+
+            if (setting?.value) {
+                globalSignature = setting.value;
+            }
+        } catch (e) {
+            console.warn('Could not load card_secret_phrase, using default:', e.message);
+        }
+
+        // 1. Set Signature (Derived from Passphrase)
+        // We hash the passphrase and take first 8 bytes (16 hex chars) to fit NTAG pages 4-5
+        const signature = crypto.createHash('sha256').update(globalSignature).digest('hex').substring(0, 16).toUpperCase();
+
+        // 2. Check if card exists (Using Admin Client to bypass RLS)
+        const { data: existingCard } = await supabaseAdmin
             .from('cards')
             .select('*')
             .eq('uid', uid)
@@ -46,17 +85,17 @@ export async function POST(request) {
             const updates = {
                 signature,
                 enrolled_at: new Date().toISOString(),
-                enrolled_by: session.user.id,
+                enrolled_by: userId,
                 is_active: true,
                 deleted_at: null
             };
 
             // Only update customer_id if provided explicitly
             if (customer_id !== undefined) {
-                updates.customer_id = customer_id || null;
+                updates.customer_id = validCustomerId;
             }
 
-            const { data, error } = await supabase
+            const { data, error } = await supabaseAdmin
                 .from('cards')
                 .update(updates)
                 .eq('uid', uid)
@@ -67,14 +106,14 @@ export async function POST(request) {
             cardResult = data;
         } else {
             // Create new card
-            const { data, error } = await supabase
+            const { data, error } = await supabaseAdmin
                 .from('cards')
                 .insert({
                     uid,
-                    customer_id: customer_id || null, // Allow null
+                    customer_id: validCustomerId, // Use the validated ID (or null)
                     signature,
                     enrolled_at: new Date().toISOString(),
-                    enrolled_by: session.user.id,
+                    enrolled_by: userId,
                     is_active: true,
                     // Set default expiry 1 year from now
                     expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
@@ -103,6 +142,12 @@ export async function POST(request) {
         });
 
     } catch (error) {
-        return handleApiError(error, 'POST /api/cards/enroll');
+        console.error('Enrollment API Error:', error);
+        return NextResponse.json({
+            success: false,
+            message: error.message || 'Server Error',
+            details: error.details,
+            hint: error.hint
+        }, { status: 500 });
     }
 }
